@@ -8,7 +8,7 @@
 
 ```mermaid
 flowchart TD
-    START(["Початок"]) -->|"створення<br/>Студент, Агент"| BL["Backlog"]
+    START((" ")) -->|"створення<br/>Студент, Агент"| BL["Backlog"]
     BL -->|"є незавершена залежність<br/>Студент, Агент"| BK["Blocked"]
     BK -->|"блокер завершено<br/>Студент, Агент"| BL
     BL -->|"взято в роботу<br/>Студент, Агент"| IP["In Progress"]
@@ -17,8 +17,10 @@ flowchart TD
     IR -->|"є зауваження<br/>лише Студент"| IP
     IR -->|"перевірку пройдено<br/>лише Студент"| DN["Done"]
     DN -->|"повторне відкриття, REVISE<br/>лише Студент"| IP
-    DN --> END(["Кінець"])
+    DN --> END((" "))
 
+    style START fill:#fff,stroke:#fff
+    style END fill:#555,stroke:#fff,stroke-width:3px
     style BL fill:#e5e7eb,stroke:#555,color:#111
     style BK fill:#f8c4c4,stroke:#a33,color:#111
     style IP fill:#ffe9a3,stroke:#a80,color:#111
