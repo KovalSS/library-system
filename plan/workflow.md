@@ -7,25 +7,23 @@
 - **Агент** — кодинговий агент (Claude Code): виконує технічну роботу, пропонує, готує зведення; рішень Gate і валідації не ухвалює (`plan/roles.md`).
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Backlog : створення — (Студент, Агент)
+flowchart TD
+    START(("●")) -->|"створення<br/>Студент, Агент"| BL["Backlog"]
+    BL -->|"є незавершена залежність<br/>Студент, Агент"| BK["Blocked"]
+    BK -->|"блокер завершено<br/>Студент, Агент"| BL
+    BL -->|"взято в роботу<br/>Студент, Агент"| IP["In Progress"]
+    IP -->|"нова залежність<br/>Студент, Агент"| BK
+    IP -->|"роботу виконано<br/>Агент, Студент"| IR["In Review"]
+    IR -->|"є зауваження<br/>лише Студент"| IP
+    IR -->|"перевірку пройдено<br/>лише Студент"| DN["Done"]
+    DN -->|"повторне відкриття, REVISE<br/>лише Студент"| IP
+    DN --> END(("◉"))
 
-    Backlog --> Blocked : з'явилась незавершена залежність — (Студент, Агент)
-    Blocked --> Backlog : блокер завершено (Done) — (Студент, Агент)
-
-    Backlog --> InProgress : взято в роботу, залежності закриті — (Студент, Агент)
-    InProgress --> Blocked : виявлено нову залежність — (Студент, Агент)
-
-    InProgress --> InReview : роботу виконано, передано на перевірку — (Агент, Студент)
-    InReview --> InProgress : є зауваження, доопрацювання — (лише Студент)
-
-    InReview --> Done : перевірку пройдено — (лише Студент)
-    Done --> InProgress : повторне відкриття, REVISE — (лише Студент)
-
-    Done --> [*]
-
-    state "In Progress" as InProgress
-    state "In Review" as InReview
+    style BL fill:#e5e7eb,stroke:#555,color:#111
+    style BK fill:#f8c4c4,stroke:#a33,color:#111
+    style IP fill:#ffe9a3,stroke:#a80,color:#111
+    style IR fill:#bcd6f7,stroke:#36a,color:#111
+    style DN fill:#b8e6b8,stroke:#3a3,color:#111
 ```
 
 ## Перехід за типами тікетів
