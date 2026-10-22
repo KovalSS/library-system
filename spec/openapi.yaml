@@ -130,7 +130,7 @@ paths:
       tags: [Auth]
       operationId: resetPassword
       summary: Встановити новий пароль за токеном із листа
-      description: Токен надходить у листі, створеному за `POST /auth/password-reset-requests`; недійсний чи прострочений токен — `400`.
+      description: Токен надходить у листі, створеному за `POST /auth/password-reset-requests`; недійсний чи прострочений токен — `400 invalid_token`.
       security: []
       x-req-ids: [REQ-F-047, REQ-NF-003]
       x-roles: [public]
@@ -142,7 +142,7 @@ paths:
             example: { token: 3b1f9d2c8e7a4c5d, newPassword: N3w-S3cret-pass }
       responses:
         '204': { description: Пароль змінено. }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400': { $ref: '#/components/responses/InvalidToken' }
 
   # ------------------------------------------------------------- Readers
   /readers:
@@ -216,6 +216,7 @@ paths:
                 page: 1
                 pageSize: 20
                 total: 1
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -256,7 +257,8 @@ paths:
       summary: Підтвердити email читача за токеном із посилання
       description: |
         Посилання з листа відкриває сторінку веб-застосунку, яка надсилає
-        токен сюди. Зміна стану не виконується через `GET`.
+        токен сюди. Зміна стану не виконується через `GET`. Недійсний чи
+        прострочений токен — `400 invalid_token`.
       security: []
       x-req-ids: [REQ-F-016]
       x-roles: [public]
@@ -280,7 +282,7 @@ paths:
                 birthDate: '1995-04-12'
                 status: active
                 registeredAt: '2026-10-20T09:15:00Z'
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400': { $ref: '#/components/responses/InvalidToken' }
 
   /readers/{readerId}/loans:
     parameters:
@@ -323,6 +325,7 @@ paths:
                 page: 1
                 pageSize: 20
                 total: 1
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -361,6 +364,7 @@ paths:
                 page: 1
                 pageSize: 20
                 total: 1
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -503,6 +507,7 @@ paths:
                 page: 1
                 pageSize: 20
                 total: 1
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1088,8 +1093,10 @@ paths:
         Термін користування визначається чергою на видання на момент видачі:
         14 днів, якщо черга є, інакше 30 (REQ-F-019). Ставка штрафу (1% чи
         5% ціни за день) фіксується в тій самій умові й надалі не змінюється
-        (REQ-F-027). Екземпляр, що не в стані `available`, — `409`.
-      x-req-ids: [REQ-F-018, REQ-F-019, REQ-F-027, REQ-NF-004]
+        (REQ-F-027). Екземпляр, що не в стані `available`, або екземпляр,
+        утримуваний за бронюванням іншого читача (бронювання в стані `ready`),
+        — `409 copy_not_available`.
+      x-req-ids: [REQ-F-018, REQ-F-019, REQ-F-027]
       x-roles: [librarian]
       requestBody:
         required: true
@@ -1146,7 +1153,7 @@ paths:
               schema: { $ref: '#/components/schemas/Loan' }
               example:
                 id: 0d9b7a0e-7a63-4d1f-8f43-1a2b3c4d5e03
-                readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a02
                 copyId: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c02
                 editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b04
                 issuedAt: '2026-08-20'
@@ -1261,6 +1268,7 @@ paths:
       description: |
         Видання, відсортовані за кількістю видач у періоді. CSV-експорт —
         заголовок `Accept: text/csv`, дані ті самі, що в JSON (REQ-F-042).
+        Якщо `from` пізніше за `to` — `400 validation_failed`.
       x-req-ids: [REQ-F-039, REQ-F-042]
       x-roles: [librarian, admin, chief_admin]
       parameters:
@@ -1324,7 +1332,9 @@ paths:
       tags: [Reports]
       operationId: getLibraryLoadReport
       summary: Звіт «Завантаженість бібліотеки»
-      description: 'Кількість видач і повернень за період. CSV — `Accept: text/csv`.'
+      description: |
+        Кількість видач і повернень за період. CSV — `Accept: text/csv`.
+        Якщо `from` пізніше за `to` — `400 validation_failed`.
       x-req-ids: [REQ-F-041, REQ-F-042]
       x-roles: [librarian, admin, chief_admin]
       parameters:
@@ -1454,6 +1464,26 @@ components:
             details:
               - { field: title, issue: Обов'язкове поле. }
             requestId: req-7f3a21
+    InvalidToken:
+      description: Тіло некоректне або токен із листа недійсний чи прострочений.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          examples:
+            validation_failed:
+              summary: Тіло не відповідає схемі
+              value:
+                code: validation_failed
+                message: Запит містить некоректні дані.
+                details:
+                  - { field: token, issue: Обов'язкове поле. }
+                requestId: req-7f3a30
+            invalid_token:
+              summary: Токен недійсний або прострочений
+              value:
+                code: invalid_token
+                message: Посилання недійсне або прострочене.
+                requestId: req-7f3a31
     Unauthorized:
       description: Відсутній або недійсний токен.
       content:
@@ -1558,7 +1588,7 @@ components:
             message: Екземпляр виданий або списаний, зміна неможлива.
             requestId: req-7f3a2c
     CopyNotAvailable:
-      description: Екземпляр недоступний для видачі.
+      description: Екземпляр не в стані `available` або утримується за бронюванням іншого читача.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -1596,6 +1626,7 @@ components:
           description: Машиночитний код помилки.
           enum:
             - validation_failed
+            - invalid_token
             - unauthorized
             - invalid_credentials
             - forbidden
@@ -1718,7 +1749,7 @@ components:
         author: { type: string, minLength: 1, maxLength: 200 }
         title: { type: string, minLength: 1, maxLength: 300 }
         year: { type: integer, minimum: 1000, maximum: 2100 }
-        isbn: { type: string, pattern: '^(?:[0-9]{10}|[0-9]{13})$', description: ISBN-10 або ISBN-13 без дефісів. }
+        isbn: { type: string, pattern: '^(?:[0-9]{9}[0-9X]|[0-9]{13})$', description: 'ISBN-10 (останній символ може бути X) або ISBN-13, без дефісів.' }
         genreId: { type: string, format: uuid }
         price: { type: number, minimum: 0, description: Ціна в гривнях. }
         totalCopies: { type: integer, minimum: 0 }
@@ -1729,7 +1760,7 @@ components:
         author: { type: string, minLength: 1, maxLength: 200 }
         title: { type: string, minLength: 1, maxLength: 300 }
         year: { type: integer, minimum: 1000, maximum: 2100 }
-        isbn: { type: string, pattern: '^(?:[0-9]{10}|[0-9]{13})$' }
+        isbn: { type: string, pattern: '^(?:[0-9]{9}[0-9X]|[0-9]{13})$' }
         genreId: { type: string, format: uuid }
         price: { type: number, minimum: 0 }
         totalCopies: { type: integer, minimum: 0 }
