@@ -6,6 +6,7 @@
 2. Правила проєкту (критерії API-GATE 1, 4, 5):
    * кожна операція має operationId (унікальний), summary, description, x-req-ids
      (формат REQ-F-NNN / REQ-NF-NNN, ID існує в SRS), x-roles і відповідь 4xx;
+   * операція з query-параметрами або тілом описує 400, з параметром шляху - 404;
    * відповіді помилок посилаються на єдину схему Error;
    * усі приклади (example/examples) відповідають своїм схемам;
    * кожна вимога SRS, окрім відомих винятків, має операцію.
@@ -24,7 +25,7 @@ ROOT = Path(__file__).resolve().parents[2]
 METHODS = ("get", "post", "put", "patch", "delete")
 ROLES = {"public", "reader", "librarian", "admin", "chief_admin"}
 # Вимоги без операції API (обґрунтування - docs/api-design.md, розд. 1).
-NOT_AN_OPERATION = {"REQ-F-022", "REQ-NF-001", "REQ-NF-002", "REQ-NF-005"}
+NOT_AN_OPERATION = {"REQ-F-022", "REQ-NF-001", "REQ-NF-002", "REQ-NF-004", "REQ-NF-005"}
 
 raw = yaml.safe_load((ROOT / "spec" / "openapi.yaml").read_text(encoding="utf-8"))
 validate(raw)
@@ -110,6 +111,11 @@ for path, item in raw["paths"].items():
             errors.append(f"{name}: x-roles порожні або містять невідому роль")
         if not any(code in op["responses"] for code in ("400", "401", "404")):
             errors.append(f"{name}: немає жодної відповіді 4xx")
+        locations = {resolve(p)["in"] for p in item.get("parameters", []) + op.get("parameters", [])}
+        if ("query" in locations or "requestBody" in op) and "400" not in op["responses"]:
+            errors.append(f"{name}: приймає query-параметри або тіло, але не описує 400")
+        if "path" in locations and "404" not in op["responses"]:
+            errors.append(f"{name}: має параметр шляху, але не описує 404")
         for code, resp in op["responses"].items():
             for ctype, media in resolve(resp).get("content", {}).items():
                 check_examples(media, f"{name} {code} {ctype}")

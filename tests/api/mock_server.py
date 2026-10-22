@@ -7,7 +7,8 @@
 
 * знаходить операцію за методом і шляхом (шаблони `/loans/{loanId}`);
 * перевіряє автентифікацію (`security`) -> 401;
-* перевіряє параметри запиту/шляху та тіло за схемою -> 400;
+* перевіряє параметри шляху (некоректний ідентифікатор -> 404), query-параметри
+  й тіло за схемою -> 400;
 * повертає приклад із контракту: найменшу 2xx-відповідь або ту, яку просить
   заголовок `Prefer: code=NNN`; `Prefer: example=ключ` вибирає іменований приклад;
 * підтримує узгодження вмісту за `Accept` (JSON / CSV);
@@ -139,10 +140,6 @@ def pick_example(media, name):
     return None
 
 
-def error_status(op, status):
-    return str(status) if str(status) in op["responses"] else None
-
-
 class Handler(BaseHTTPRequestHandler):
     contract = None
 
@@ -186,9 +183,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(401, op, response or {})
 
         problems = validate_request(op, shared, path_values, parse_qs(url.query), raw, self.headers.get("Content-Type"))
-        if problems and error_status(op, 400):
+        if problems:
             self.send_header_violations(problems)
-            return self.reply(400, op, op["responses"]["400"])
+            # Ресурсу з некоректним ідентифікатором не існує -> 404, решта порушень -> 400.
+            status = 404 if any(p.startswith("path ") for p in problems) else 400
+            return self.reply(status, op, op["responses"].get(str(status), {}))
 
         prefer = dict(re.findall(r"(\w+)=([^,;\s]+)", self.headers.get("Prefer", "")))
         if "code" in prefer:
