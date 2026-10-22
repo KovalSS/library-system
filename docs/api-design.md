@@ -21,9 +21,11 @@
 | REQ-F-035…037 (генерація сповіщень) | Читаються через `listReaderNotifications` (REQ-F-038) |
 | REQ-F-027, 029 (штраф на льоту, автостатус) | Поля `Loan.fineAmount`, `Loan.overdueDays`, статус `compensated` |
 
-Нефункціональні: REQ-NF-003, 004 відображено в операціях (`x-req-ids`); REQ-NF-001, 002
-не є операціями API; REQ-NF-005 відображено полем `requestId` моделі `Error`.
-Ці чотири винятки закодовано в `tests/api/lint_contract.py`.
+Нефункціональні: REQ-NF-003 відображено в операціях (`x-req-ids`). REQ-NF-001, 002 і
+004 (продуктивність, резервне копіювання, зручність інтерфейсу) не є операціями API:
+кількість кроків інтерфейсу API довести не може. REQ-NF-005 відображено полем
+`requestId` моделі `Error`. Винятки (REQ-F-022 і чотири REQ-NF) закодовано в
+`tests/api/lint_contract.py`.
 
 ## 2. Ресурси предметної області (крок 2)
 
@@ -73,16 +75,16 @@
 | `login` | `POST /auth/login` | без автентифікації | REQ-F-009, REQ-F-010, REQ-F-012, REQ-F-013, REQ-F-014, REQ-F-016, REQ-F-048, REQ-NF-003 | 200, 400, 401, 403, 423 |
 | `requestPasswordReset` | `POST /auth/password-reset-requests` | без автентифікації | REQ-F-047 | 202, 400 |
 | `resetPassword` | `POST /auth/password-resets` | без автентифікації | REQ-F-047, REQ-NF-003 | 204, 400 |
-| `listReaders` | `GET /readers` | бібліотекар, адмін, гол. адмін | REQ-F-018, REQ-F-050 | 200, 401, 403 |
+| `listReaders` | `GET /readers` | бібліотекар, адмін, гол. адмін | REQ-F-018, REQ-F-050 | 200, 400, 401, 403 |
 | `registerReader` | `POST /readers` | без автентифікації | REQ-F-015, REQ-F-017 | 201, 400, 409 |
 | `getReader` | `GET /readers/{readerId}` | читач, бібліотекар, адмін, гол. адмін | REQ-F-050, REQ-NF-003 | 200, 401, 403, 404 |
 | `confirmReaderEmail` | `POST /email-confirmations` | без автентифікації | REQ-F-016 | 200, 400 |
-| `listReaderLoans` | `GET /readers/{readerId}/loans` | читач, бібліотекар, адмін, гол. адмін | REQ-F-021, REQ-F-029 | 200, 401, 403, 404 |
-| `listReaderReservations` | `GET /readers/{readerId}/reservations` | читач, бібліотекар, адмін, гол. адмін | REQ-F-023, REQ-F-024, REQ-F-025, REQ-F-026, REQ-F-036 | 200, 401, 403, 404 |
+| `listReaderLoans` | `GET /readers/{readerId}/loans` | читач, бібліотекар, адмін, гол. адмін | REQ-F-021, REQ-F-029 | 200, 400, 401, 403, 404 |
+| `listReaderReservations` | `GET /readers/{readerId}/reservations` | читач, бібліотекар, адмін, гол. адмін | REQ-F-023, REQ-F-024, REQ-F-025, REQ-F-026, REQ-F-036 | 200, 400, 401, 403, 404 |
 | `getReaderFines` | `GET /readers/{readerId}/fines` | читач, бібліотекар, адмін, гол. адмін | REQ-F-027, REQ-F-028, REQ-F-031 | 200, 401, 403, 404 |
 | `payReaderFines` | `POST /readers/{readerId}/fine-payments` | бібліотекар | REQ-F-030 | 201, 400, 401, 403, 404, 409 |
 | `listReaderRecommendations` | `GET /readers/{readerId}/recommendations` | читач, бібліотекар, адмін, гол. адмін | REQ-F-032, REQ-F-033, REQ-F-034 | 200, 401, 403, 404 |
-| `listReaderNotifications` | `GET /readers/{readerId}/notifications` | читач, бібліотекар, адмін, гол. адмін | REQ-F-035, REQ-F-036, REQ-F-037, REQ-F-038 | 200, 401, 403, 404 |
+| `listReaderNotifications` | `GET /readers/{readerId}/notifications` | читач, бібліотекар, адмін, гол. адмін | REQ-F-035, REQ-F-036, REQ-F-037, REQ-F-038 | 200, 400, 401, 403, 404 |
 | `listGenres` | `GET /genres` | читач, бібліотекар, адмін, гол. адмін | REQ-F-001, REQ-F-003, REQ-F-046 | 200, 401 |
 | `createGenre` | `POST /genres` | адмін, гол. адмін | REQ-F-003 | 201, 400, 401, 403 |
 | `updateGenre` | `PATCH /genres/{genreId}` | адмін, гол. адмін | REQ-F-003 | 200, 400, 401, 403, 404 |
@@ -100,7 +102,7 @@
 | `listLibrarians` | `GET /librarians` | адмін, гол. адмін | REQ-F-013, REQ-F-014 | 200, 401, 403 |
 | `createLibrarian` | `POST /librarians` | адмін, гол. адмін | REQ-F-013 | 201, 400, 401, 403, 409 |
 | `updateLibrarian` | `PATCH /librarians/{librarianId}` | адмін, гол. адмін | REQ-F-014 | 200, 400, 401, 403, 404, 409 |
-| `createLoan` | `POST /loans` | бібліотекар | REQ-F-018, REQ-F-019, REQ-F-027, REQ-NF-004 | 201, 400, 401, 403, 404, 409 |
+| `createLoan` | `POST /loans` | бібліотекар | REQ-F-018, REQ-F-019, REQ-F-027 | 201, 400, 401, 403, 404, 409 |
 | `getLoan` | `GET /loans/{loanId}` | читач, бібліотекар, адмін, гол. адмін | REQ-F-021, REQ-F-027, REQ-F-028, REQ-F-029 | 200, 401, 403, 404 |
 | `returnLoan` | `POST /loans/{loanId}/return` | бібліотекар | REQ-F-020, REQ-F-026, REQ-F-027, REQ-F-028 | 200, 401, 403, 404, 409 |
 | `createReservation` | `POST /reservations` | читач | REQ-F-023, REQ-F-024 | 201, 400, 401, 403, 404 |
@@ -141,10 +143,10 @@
 
 | HTTP | Коли | `code` |
 |---|---|---|
-| 400 | Тіло, параметри чи формат не відповідають схемі; недійсний токен | `validation_failed` |
+| 400 | Тіло чи query-параметри не відповідають схемі; `from` пізніше за `to`; недійсний або прострочений токен із листа | `validation_failed`, `invalid_token` |
 | 401 | Немає або недійсний токен; невірний пароль | `unauthorized`, `invalid_credentials` |
 | 403 | Немає права на дію; акаунт неактивний; акаунт головного адміністратора | `forbidden`, `account_inactive`, `protected_account` |
-| 404 | Ресурс не знайдено | `not_found` |
+| 404 | Ресурс не знайдено, зокрема некоректний ідентифікатор у шляху | `not_found` |
 | 409 | Дубль унікального значення або несумісний стан ресурсу | `duplicate_email`, `duplicate_isbn`, `duplicate_inventory_number`, `copy_state_conflict`, `copy_not_available`, `loan_already_closed`, `no_outstanding_fine` |
 | 423 | Акаунт заблоковано на 15 хв (REQ-F-048); заголовок `Retry-After` | `account_locked` |
 
@@ -167,11 +169,13 @@
 Валідація складається з `openapi-spec-validator` (відповідність стандарту
 OpenAPI 3.1) і правил проєкту: кожна операція має `operationId`, `summary`,
 `description`, `x-req-ids` (формат `REQ-F-NNN` / `REQ-NF-NNN`, ID існує в SRS),
-`x-roles` і хоча б одну відповідь 4xx; усі відповіді помилок посилаються на схему
-`Error`; усі приклади відповідають своїм схемам.
+`x-roles` і хоча б одну відповідь 4xx; операція з query-параметрами чи тілом описує
+400, з параметром шляху — 404; усі відповіді помилок посилаються на схему `Error`;
+усі приклади відповідають своїм схемам.
 
 Mock (`tests/api/mock_server.py`) керується лише специфікацією: знаходить операцію
-за шляхом, перевіряє токен (401) і форму запиту (400) та повертає приклад із
+за шляхом, перевіряє токен (401), ідентифікатор у шляху (404) і форму запиту (400)
+та повертає приклад із
 контракту. Стану й бізнес-логіки в ньому немає, тому він не є серверною реалізацією.
 
 Сценарії (`tests/api/scenarios.py`, раннер `tests/api/run.py` на Python) перевіряють, що статус і тіло відповіді mock
@@ -182,4 +186,6 @@ Mock (`tests/api/mock_server.py`) керується лише специфіка
 Обмеження mock: він повертає приклади з контракту й перевіряє форму запиту, але
 не виконує бізнес-логіку (ролі, стан даних, розрахунок штрафу). Тому негативні
 бізнес-сценарії (403, 404, 409, 423) вибираються заголовком `Prefer: code=…`, а
-правильність самих правил перевірятиметься тестами в лаб. №5.
+правильність самих правил перевірятиметься тестами в лаб. №5. Правила, що пов'язують
+кілька полів (напр., `from` пізніше за `to`), схемою не виражаються, тому mock їх не
+перевіряє; вони записані в описі операцій.
