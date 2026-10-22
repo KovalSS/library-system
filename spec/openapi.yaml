@@ -1,0 +1,2017 @@
+openapi: 3.1.0
+
+info:
+  title: Library System API
+  version: 1.0.0
+  summary: REST API бібліотечної інформаційної системи (контракт до реалізації).
+  description: |
+    Формальний контракт REST API, спроєктований за затвердженою `spec/srs.md`
+    (лаб. №4, підхід API-first). Реалізації ще немає: контракт перевіряється
+    Python-валідатором `tests/api/lint_contract.py` і mock-сервером
+    `tests/api/mock_server.py`.
+
+    **Зв'язок із вимогами.** Кожна операція має розширення `x-req-ids` — перелік
+    ідентифікаторів `REQ-F-NNN` / `REQ-NF-NNN`, які вона реалізує або через які
+    спостерігається поведінка. Зведена таблиця — `docs/api-design.md`.
+
+    **Ролі.** Розширення `x-roles` вказує ролі, яким дозволена операція:
+    `reader` (читач), `librarian` (бібліотекар), `admin` (адміністратор нижчого
+    рівня), `chief_admin` (головний адміністратор). Головний адміністратор має
+    всі права адміністратора.
+
+    **Єдина модель помилок.** Усі відповіді 4xx мають тіло `Error`
+    (`#/components/schemas/Error`).
+
+    **Правила вибору коду помилки.**
+    * `400` — запит синтаксично чи за схемою некоректний;
+    * `401` — відсутня або недійсна автентифікація;
+    * `403` — автентифікований користувач не має права на дію;
+    * `404` — ресурс не знайдено;
+    * `409` — порушення унікальності або несумісний поточний стан ресурсу;
+    * `423` — акаунт тимчасово заблоковано (REQ-F-048).
+
+    **Поведінка, якої немає в SRS**, винесена в `logs/api-addendum-1.md`.
+    Самостійне продовження терміну користування (REQ-F-022) скасовано
+    рішенням LS-40, тому в API відсутнє.
+  contact:
+    name: Команда розробки бібліотечної системи
+    email: serhii.koval@datarootlabs.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://127.0.0.1:4010
+    description: Mock API (tests/api/mock_server.py)
+
+tags:
+  - name: Auth
+    description: Автентифікація та відновлення пароля
+  - name: Readers
+    description: Читачі та їхній кабінет
+  - name: Catalog
+    description: Каталог видань, екземпляри, жанри
+  - name: Accounts
+    description: Облікові записи адміністраторів і бібліотекарів
+  - name: Loans
+    description: Видача та повернення
+  - name: Reservations
+    description: Бронювання та черга
+  - name: Fines
+    description: Штрафи
+  - name: Reports
+    description: Звіти
+  - name: Audit
+    description: Аудит-лог
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ---------------------------------------------------------------- Auth
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Вхід у систему
+      description: |
+        Після 5 поспіль невдалих спроб акаунт блокується на 15 хвилин —
+        відповідь `423` із заголовком `Retry-After`.
+        Деактивований акаунт і акаунт читача без підтвердженого email
+        отримують `403`.
+      security: []
+      x-req-ids: [REQ-F-009, REQ-F-010, REQ-F-012, REQ-F-013, REQ-F-014, REQ-F-016, REQ-F-048, REQ-NF-003]
+      x-roles: [public]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+            example: { email: reader@example.com, password: S3cret-pass }
+      responses:
+        '200':
+          description: Автентифікація успішна.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+              example:
+                accessToken: eyJhbGciOiJIUzI1NiJ9.demo.signature
+                tokenType: Bearer
+                expiresIn: 3600
+                userId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                role: reader
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/InvalidCredentials' }
+        '403': { $ref: '#/components/responses/AccountInactive' }
+        '423': { $ref: '#/components/responses/AccountLocked' }
+
+  /auth/password-reset-requests:
+    post:
+      tags: [Auth]
+      operationId: requestPasswordReset
+      summary: Запросити лист для скидання пароля
+      description: |
+        Відповідь завжди `202`, незалежно від того, чи існує акаунт з такою
+        адресою, щоб не розкривати наявність облікових записів.
+      security: []
+      x-req-ids: [REQ-F-047]
+      x-roles: [public]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetRequest' }
+            example: { email: reader@example.com }
+      responses:
+        '202': { description: 'Запит прийнято; якщо акаунт існує, лист надіслано.' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /auth/password-resets:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Встановити новий пароль за токеном із листа
+      description: Токен надходить у листі, створеному за `POST /auth/password-reset-requests`; недійсний чи прострочений токен — `400`.
+      security: []
+      x-req-ids: [REQ-F-047, REQ-NF-003]
+      x-roles: [public]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordReset' }
+            example: { token: 3b1f9d2c8e7a4c5d, newPassword: N3w-S3cret-pass }
+      responses:
+        '204': { description: Пароль змінено. }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  # ------------------------------------------------------------- Readers
+  /readers:
+    post:
+      tags: [Readers]
+      operationId: registerReader
+      summary: Самостійна реєстрація читача
+      description: |
+        Створює акаунт читача у стані `pending_confirmation` і надсилає лист із
+        посиланням підтвердження. Повторна реєстрація на email, що вже
+        використовується підтвердженим акаунтом, — `409`.
+      security: []
+      x-req-ids: [REQ-F-015, REQ-F-017]
+      x-roles: [public]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReaderRegistration' }
+            example:
+              fullName: Іван Петренко
+              email: reader@example.com
+              phone: '+380501234567'
+              birthDate: '1995-04-12'
+              password: S3cret-pass
+      responses:
+        '201':
+          description: Акаунт створено, очікує підтвердження email.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reader' }
+              example:
+                id: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                fullName: Іван Петренко
+                email: reader@example.com
+                phone: '+380501234567'
+                birthDate: '1995-04-12'
+                status: pending_confirmation
+                registeredAt: '2026-10-20T09:15:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/DuplicateEmail' }
+    get:
+      tags: [Readers]
+      operationId: listReaders
+      summary: Пошук читачів (для персоналу)
+      description: Доступний лише бібліотекарям і адміністраторам (REQ-F-050).
+      x-req-ids: [REQ-F-018, REQ-F-050]
+      x-roles: [librarian, admin, chief_admin]
+      parameters:
+        - name: q
+          in: query
+          description: Підрядок у ПІБ або email.
+          schema: { type: string, minLength: 1, maxLength: 100 }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Сторінка читачів.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReaderPage' }
+              example:
+                items:
+                  - id: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                    fullName: Іван Петренко
+                    email: reader@example.com
+                    phone: '+380501234567'
+                    birthDate: '1995-04-12'
+                    status: active
+                    registeredAt: '2026-10-20T09:15:00Z'
+                page: 1
+                pageSize: 20
+                total: 1
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /readers/{readerId}:
+    parameters:
+      - $ref: '#/components/parameters/ReaderId'
+    get:
+      tags: [Readers]
+      operationId: getReader
+      summary: Дані читача
+      description: |
+        Персональні дані бачить лише сам читач та персонал (REQ-F-050).
+        Читач, що запитує чужий профіль, отримує `403`.
+      x-req-ids: [REQ-F-050, REQ-NF-003]
+      x-roles: [reader, librarian, admin, chief_admin]
+      responses:
+        '200':
+          description: Профіль читача.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reader' }
+              example:
+                id: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                fullName: Іван Петренко
+                email: reader@example.com
+                phone: '+380501234567'
+                birthDate: '1995-04-12'
+                status: active
+                registeredAt: '2026-10-20T09:15:00Z'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /email-confirmations:
+    post:
+      tags: [Readers]
+      operationId: confirmReaderEmail
+      summary: Підтвердити email читача за токеном із посилання
+      description: |
+        Посилання з листа відкриває сторінку веб-застосунку, яка надсилає
+        токен сюди. Зміна стану не виконується через `GET`.
+      security: []
+      x-req-ids: [REQ-F-016]
+      x-roles: [public]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailConfirmation' }
+            example: { token: 9a7c1e0b5d2f4a68 }
+      responses:
+        '200':
+          description: Акаунт активовано.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reader' }
+              example:
+                id: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                fullName: Іван Петренко
+                email: reader@example.com
+                phone: '+380501234567'
+                birthDate: '1995-04-12'
+                status: active
+                registeredAt: '2026-10-20T09:15:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /readers/{readerId}/loans:
+    parameters:
+      - $ref: '#/components/parameters/ReaderId'
+    get:
+      tags: [Loans]
+      operationId: listReaderLoans
+      summary: Історія видач читача
+      description: Минулі й поточні видачі з датами (кабінет читача).
+      x-req-ids: [REQ-F-021, REQ-F-029]
+      x-roles: [reader, librarian, admin, chief_admin]
+      parameters:
+        - name: status
+          in: query
+          description: Фільтр за статусом видачі.
+          schema: { $ref: '#/components/schemas/LoanStatus' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Сторінка видач.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoanPage' }
+              example:
+                items:
+                  - id: 0d9b7a0e-7a63-4d1f-8f43-1a2b3c4d5e01
+                    readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                    copyId: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c01
+                    editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                    issuedAt: '2026-10-01'
+                    dueDate: '2026-10-31'
+                    termDays: 30
+                    status: active
+                    returnedAt: null
+                    overdueDays: 0
+                    fineRatePercent: 1
+                    fineAmount: 0
+                    finePaidAmount: 0
+                page: 1
+                pageSize: 20
+                total: 1
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /readers/{readerId}/reservations:
+    parameters:
+      - $ref: '#/components/parameters/ReaderId'
+    get:
+      tags: [Reservations]
+      operationId: listReaderReservations
+      summary: Бронювання та позиції в черзі читача
+      description: Читач бачить власні бронювання, строк отримання та позицію в черзі.
+      x-req-ids: [REQ-F-023, REQ-F-024, REQ-F-025, REQ-F-026, REQ-F-036]
+      x-roles: [reader, librarian, admin, chief_admin]
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ReservationStatus' }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Сторінка бронювань.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReservationPage' }
+              example:
+                items:
+                  - id: 4e2a9c10-1b3d-4f58-a6c7-5d8e9f0a1b01
+                    readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                    editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b02
+                    status: queued
+                    queuePosition: 2
+                    pickupDeadline: null
+                    createdAt: '2026-10-20T10:00:00Z'
+                page: 1
+                pageSize: 20
+                total: 1
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /readers/{readerId}/fines:
+    parameters:
+      - $ref: '#/components/parameters/ReaderId'
+    get:
+      tags: [Fines]
+      operationId: getReaderFines
+      summary: Поточні штрафи читача
+      description: |
+        Суми обчислюються на льоту за поточною датою (REQ-F-027), без
+        окремого фонового перерахунку; жоден штраф не перевищує ціни книги
+        (REQ-F-028).
+      x-req-ids: [REQ-F-027, REQ-F-028, REQ-F-031]
+      x-roles: [reader, librarian, admin, chief_admin]
+      responses:
+        '200':
+          description: Підсумок штрафів.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FineSummary' }
+              example:
+                readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                currency: UAH
+                totalOutstanding: 45
+                items:
+                  - loanId: 0d9b7a0e-7a63-4d1f-8f43-1a2b3c4d5e02
+                    editionTitle: Кобзар
+                    fineAmount: 45
+                    paidAmount: 0
+                    outstandingAmount: 45
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /readers/{readerId}/fine-payments:
+    parameters:
+      - $ref: '#/components/parameters/ReaderId'
+    post:
+      tags: [Fines]
+      operationId: payReaderFines
+      summary: Зареєструвати оплату штрафу
+      description: |
+        Бібліотекар реєструє оплату повної суми заборгованості читача
+        готівкою чи карткою. Часткова оплата не підтримується, тому сума в
+        запиті не передається — її визначає система. Якщо боргу немає — `409`.
+      x-req-ids: [REQ-F-030]
+      x-roles: [librarian]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FinePaymentCreate' }
+            example: { method: cash }
+      responses:
+        '201':
+          description: Оплату зареєстровано, заборгованість обнулено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FinePayment' }
+              example:
+                id: 7b5c3d1e-9f2a-4e60-b8d4-0a1c2e3f4b01
+                readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                method: cash
+                amount: 45
+                currency: UAH
+                paidAt: '2026-10-22T12:00:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/NoOutstandingFine' }
+
+  /readers/{readerId}/recommendations:
+    parameters:
+      - $ref: '#/components/parameters/ReaderId'
+    get:
+      tags: [Readers]
+      operationId: listReaderRecommendations
+      summary: Рекомендації видань для читача
+      description: |
+        За авторами та жанрами раніше отриманих книг; лише видання, які
+        мають хоча б один екземпляр у фонді на момент формування.
+      x-req-ids: [REQ-F-032, REQ-F-033, REQ-F-034]
+      x-roles: [reader, librarian, admin, chief_admin]
+      responses:
+        '200':
+          description: Список рекомендацій.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Recommendation' }
+              example:
+                - reason: same_author
+                  edition:
+                    id: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b03
+                    author: Тарас Шевченко
+                    title: Гайдамаки
+                    year: 1841
+                    isbn: '9786171234567'
+                    genre: { id: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e701, name: Поезія }
+                    price: 250
+                    totalCopies: 3
+                    availableCopies: 2
+                    loansCount: 41
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /readers/{readerId}/notifications:
+    parameters:
+      - $ref: '#/components/parameters/ReaderId'
+    get:
+      tags: [Readers]
+      operationId: listReaderNotifications
+      summary: Сповіщення читача
+      description: Повний список у хронологічному порядку (від найновіших).
+      x-req-ids: [REQ-F-035, REQ-F-036, REQ-F-037, REQ-F-038]
+      x-roles: [reader, librarian, admin, chief_admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Сторінка сповіщень.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPage' }
+              example:
+                items:
+                  - id: 5d4c3b2a-1f0e-4d9c-8b7a-6a5b4c3d2e01
+                    readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                    type: due_soon
+                    message: Термін повернення книги «Кобзар» спливає 31.10.2026.
+                    loanId: 0d9b7a0e-7a63-4d1f-8f43-1a2b3c4d5e01
+                    createdAt: '2026-10-29T06:00:00Z'
+                page: 1
+                pageSize: 20
+                total: 1
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ------------------------------------------------------------- Catalog
+  /genres:
+    get:
+      tags: [Catalog]
+      operationId: listGenres
+      summary: Довідник жанрів
+      description: Перелік жанрів доступний усім ролям, зокрема для вибору жанру бібліотекарем.
+      x-req-ids: [REQ-F-001, REQ-F-003, REQ-F-046]
+      x-roles: [reader, librarian, admin, chief_admin]
+      responses:
+        '200':
+          description: Усі жанри.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Genre' }
+              example:
+                - { id: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e701, name: Поезія }
+                - { id: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e702, name: Повість }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Catalog]
+      operationId: createGenre
+      summary: Додати жанр
+      description: Новий жанр одразу доступний бібліотекарю при реєстрації видання.
+      x-req-ids: [REQ-F-003]
+      x-roles: [admin, chief_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenreInput' }
+            example: { name: Історичний роман }
+      responses:
+        '201':
+          description: Жанр додано; одразу доступний бібліотекарю.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Genre' }
+              example: { id: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e703, name: Історичний роман }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /genres/{genreId}:
+    parameters:
+      - name: genreId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Catalog]
+      operationId: updateGenre
+      summary: Редагувати жанр
+      description: Перейменування жанру; зміна одразу видима в каталозі.
+      x-req-ids: [REQ-F-003]
+      x-roles: [admin, chief_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenreInput' }
+            example: { name: Поезія і поеми }
+      responses:
+        '200':
+          description: Жанр оновлено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Genre' }
+              example: { id: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e701, name: Поезія і поеми }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /editions:
+    get:
+      tags: [Catalog]
+      operationId: searchEditions
+      summary: Пошук і фільтрація каталогу
+      description: |
+        Усі задані фільтри застосовуються одночасно (перетин умов).
+        Доступний усім автентифікованим ролям.
+      x-req-ids: [REQ-F-043, REQ-F-044, REQ-F-045, REQ-F-046]
+      x-roles: [reader, librarian, admin, chief_admin]
+      parameters:
+        - name: author
+          in: query
+          description: Підрядок у імені автора.
+          schema: { type: string, minLength: 1, maxLength: 200 }
+        - name: title
+          in: query
+          description: Підрядок у назві.
+          schema: { type: string, minLength: 1, maxLength: 300 }
+        - name: genreId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: year
+          in: query
+          description: Рік видання.
+          schema: { type: integer, minimum: 1000, maximum: 2100 }
+        - name: availableOnly
+          in: query
+          description: Лише видання, що мають хоча б один доступний екземпляр.
+          schema: { type: boolean, default: false }
+        - name: sort
+          in: query
+          description: Поле сортування; `popularity` — кількість видач за весь час.
+          schema: { type: string, enum: [title, year, popularity], default: title }
+        - name: order
+          in: query
+          schema: { type: string, enum: [asc, desc], default: asc }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Сторінка видань.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EditionPage' }
+              example:
+                items:
+                  - id: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                    author: Тарас Шевченко
+                    title: Кобзар
+                    year: 1840
+                    isbn: '9786171234501'
+                    genre: { id: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e701, name: Поезія }
+                    price: 300
+                    totalCopies: 5
+                    availableCopies: 3
+                    loansCount: 87
+                page: 1
+                pageSize: 20
+                total: 1
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Catalog]
+      operationId: createEdition
+      summary: Зареєструвати видання в каталозі
+      description: Повторний ISBN — `409` без створення запису.
+      x-req-ids: [REQ-F-001, REQ-F-002]
+      x-roles: [librarian]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EditionInput' }
+            example:
+              author: Тарас Шевченко
+              title: Кобзар
+              year: 1840
+              isbn: '9786171234501'
+              genreId: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e701
+              price: 300
+              totalCopies: 5
+      responses:
+        '201':
+          description: Видання створено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Edition' }
+              example:
+                id: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                author: Тарас Шевченко
+                title: Кобзар
+                year: 1840
+                isbn: '9786171234501'
+                genre: { id: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e701, name: Поезія }
+                price: 300
+                totalCopies: 5
+                availableCopies: 0
+                loansCount: 0
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/DuplicateIsbn' }
+
+  /editions/{editionId}:
+    parameters:
+      - $ref: '#/components/parameters/EditionId'
+    get:
+      tags: [Catalog]
+      operationId: getEdition
+      summary: Картка видання
+      description: Дані видання та кількість доступних екземплярів; відредаговані дані видно одразу.
+      x-req-ids: [REQ-F-001, REQ-F-008, REQ-F-046]
+      x-roles: [reader, librarian, admin, chief_admin]
+      responses:
+        '200':
+          description: Видання.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Edition' }
+              example:
+                id: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                author: Тарас Шевченко
+                title: Кобзар
+                year: 1840
+                isbn: '9786171234501'
+                genre: { id: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e701, name: Поезія }
+                price: 300
+                totalCopies: 5
+                availableCopies: 3
+                loansCount: 87
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Catalog]
+      operationId: updateEdition
+      summary: Редагувати дані видання
+      description: Часткове оновлення; зміна ISBN на вже існуючий — `409`.
+      x-req-ids: [REQ-F-008, REQ-F-002]
+      x-roles: [librarian]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EditionUpdate' }
+            example: { price: 320 }
+      responses:
+        '200':
+          description: Видання оновлено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Edition' }
+              example:
+                id: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                author: Тарас Шевченко
+                title: Кобзар
+                year: 1840
+                isbn: '9786171234501'
+                genre: { id: 1b2c3d4e-5f60-4a71-8b92-a3b4c5d6e701, name: Поезія }
+                price: 320
+                totalCopies: 5
+                availableCopies: 3
+                loansCount: 87
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/DuplicateIsbn' }
+
+  /editions/{editionId}/copies:
+    parameters:
+      - $ref: '#/components/parameters/EditionId'
+    get:
+      tags: [Catalog]
+      operationId: listCopies
+      summary: Екземпляри видання
+      description: Включно зі списаними, які зберігаються в історії (REQ-F-007).
+      x-req-ids: [REQ-F-004, REQ-F-007]
+      x-roles: [librarian, admin, chief_admin]
+      responses:
+        '200':
+          description: Усі екземпляри видання.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Copy' }
+              example:
+                - id: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c01
+                  editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                  inventoryNumber: INV-000123
+                  location: Зал 2, стелаж 4
+                  status: available
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Catalog]
+      operationId: createCopy
+      summary: Додати екземпляр видання
+      description: Повторний інвентарний номер — `409` без створення запису.
+      x-req-ids: [REQ-F-004, REQ-F-005]
+      x-roles: [librarian]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CopyInput' }
+            example:
+              inventoryNumber: INV-000123
+              location: Зал 2, стелаж 4
+              status: available
+      responses:
+        '201':
+          description: Екземпляр додано.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Copy' }
+              example:
+                id: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c01
+                editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                inventoryNumber: INV-000123
+                location: Зал 2, стелаж 4
+                status: available
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/DuplicateInventoryNumber' }
+
+  /copies/{copyId}:
+    parameters:
+      - $ref: '#/components/parameters/CopyId'
+    patch:
+      tags: [Catalog]
+      operationId: updateCopy
+      summary: Змінити стан або розташування екземпляра
+      description: |
+        Вручну можна встановити лише `available` або `damaged`. Стан
+        `issued` виставляє система при видачі, `written_off` — операція
+        списання. Зміна стану виданого чи списаного екземпляра — `409`.
+      x-req-ids: [REQ-F-006]
+      x-roles: [librarian]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CopyUpdate' }
+            example: { status: damaged }
+      responses:
+        '200':
+          description: Екземпляр оновлено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Copy' }
+              example:
+                id: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c01
+                editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                inventoryNumber: INV-000123
+                location: Зал 2, стелаж 4
+                status: damaged
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CopyStateConflict' }
+
+  /copies/{copyId}/write-off:
+    parameters:
+      - $ref: '#/components/parameters/CopyId'
+    post:
+      tags: [Catalog]
+      operationId: writeOffCopy
+      summary: Списати екземпляр
+      description: |
+        Екземпляр отримує стан `written_off`, виходить із доступних для
+        видачі, але лишається в історії. Виданий або вже списаний — `409`.
+      x-req-ids: [REQ-F-007]
+      x-roles: [librarian]
+      responses:
+        '200':
+          description: Екземпляр списано.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Copy' }
+              example:
+                id: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c01
+                editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                inventoryNumber: INV-000123
+                location: Зал 2, стелаж 4
+                status: written_off
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CopyStateConflict' }
+
+  # ------------------------------------------------------------ Accounts
+  /administrators:
+    get:
+      tags: [Accounts]
+      operationId: listAdministrators
+      summary: Адміністратори нижчого рівня
+      description: Лише головний адміністратор. Повертає акаунти адміністраторів нижчого рівня.
+      x-req-ids: [REQ-F-010, REQ-F-012]
+      x-roles: [chief_admin]
+      responses:
+        '200':
+          description: Список акаунтів.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Account' }
+              example:
+                - id: 3a1b2c3d-4e5f-4a60-9b71-8c92d3e4f501
+                  fullName: Олена Коваль
+                  email: admin1@library.example
+                  role: admin
+                  active: true
+                  createdAt: '2026-09-30T08:00:00Z'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Accounts]
+      operationId: createAdministrator
+      summary: Створити адміністратора нижчого рівня
+      description: Лише головний адміністратор. Акаунт одразу активний.
+      x-req-ids: [REQ-F-010]
+      x-roles: [chief_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountInput' }
+            example:
+              fullName: Олена Коваль
+              email: admin1@library.example
+              password: Adm1n-S3cret
+      responses:
+        '201':
+          description: Акаунт створено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+              example:
+                id: 3a1b2c3d-4e5f-4a60-9b71-8c92d3e4f501
+                fullName: Олена Коваль
+                email: admin1@library.example
+                role: admin
+                active: true
+                createdAt: '2026-10-22T08:00:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/DuplicateEmail' }
+
+  /administrators/{administratorId}:
+    parameters:
+      - name: administratorId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Accounts]
+      operationId: updateAdministrator
+      summary: Редагувати або деактивувати адміністратора
+      description: |
+        Лише головний адміністратор. Акаунт головного адміністратора
+        змінювати заборонено нікому — `403` з кодом `protected_account`
+        (REQ-F-011). Видалення акаунтів не передбачено — лише деактивація
+        (`active: false`).
+      x-req-ids: [REQ-F-011, REQ-F-012]
+      x-roles: [chief_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountUpdate' }
+            example: { active: false }
+      responses:
+        '200':
+          description: Акаунт оновлено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+              example:
+                id: 3a1b2c3d-4e5f-4a60-9b71-8c92d3e4f501
+                fullName: Олена Коваль
+                email: admin1@library.example
+                role: admin
+                active: false
+                createdAt: '2026-09-30T08:00:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/ProtectedAccount' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/DuplicateEmail' }
+
+  /librarians:
+    get:
+      tags: [Accounts]
+      operationId: listLibrarians
+      summary: Бібліотекарі
+      description: Список облікових записів бібліотекарів, зокрема деактивованих.
+      x-req-ids: [REQ-F-013, REQ-F-014]
+      x-roles: [admin, chief_admin]
+      responses:
+        '200':
+          description: Список акаунтів.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Account' }
+              example:
+                - id: 3a1b2c3d-4e5f-4a60-9b71-8c92d3e4f502
+                  fullName: Марія Гнатюк
+                  email: librarian1@library.example
+                  role: librarian
+                  active: true
+                  createdAt: '2026-10-01T08:00:00Z'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Accounts]
+      operationId: createLibrarian
+      summary: Створити акаунт бібліотекаря
+      description: Акаунт одразу активний і може увійти в систему.
+      x-req-ids: [REQ-F-013]
+      x-roles: [admin, chief_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountInput' }
+            example:
+              fullName: Марія Гнатюк
+              email: librarian1@library.example
+              password: L1brarian-S3cret
+      responses:
+        '201':
+          description: Акаунт створено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+              example:
+                id: 3a1b2c3d-4e5f-4a60-9b71-8c92d3e4f502
+                fullName: Марія Гнатюк
+                email: librarian1@library.example
+                role: librarian
+                active: true
+                createdAt: '2026-10-22T08:05:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/DuplicateEmail' }
+
+  /librarians/{librarianId}:
+    parameters:
+      - name: librarianId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Accounts]
+      operationId: updateLibrarian
+      summary: Редагувати або деактивувати бібліотекаря
+      description: 'Видалення не передбачено — лише деактивація (`active: false`).'
+      x-req-ids: [REQ-F-014]
+      x-roles: [admin, chief_admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountUpdate' }
+            example: { active: false }
+      responses:
+        '200':
+          description: Акаунт оновлено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Account' }
+              example:
+                id: 3a1b2c3d-4e5f-4a60-9b71-8c92d3e4f502
+                fullName: Марія Гнатюк
+                email: librarian1@library.example
+                role: librarian
+                active: false
+                createdAt: '2026-10-01T08:00:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/DuplicateEmail' }
+
+  # --------------------------------------------------------------- Loans
+  /loans:
+    post:
+      tags: [Loans]
+      operationId: createLoan
+      summary: Оформити видачу екземпляра читачу
+      description: |
+        Термін користування визначається чергою на видання на момент видачі:
+        14 днів, якщо черга є, інакше 30 (REQ-F-019). Ставка штрафу (1% чи
+        5% ціни за день) фіксується в тій самій умові й надалі не змінюється
+        (REQ-F-027). Екземпляр, що не в стані `available`, — `409`.
+      x-req-ids: [REQ-F-018, REQ-F-019, REQ-F-027, REQ-NF-004]
+      x-roles: [librarian]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoanCreate' }
+            example:
+              readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+              copyId: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c01
+      responses:
+        '201':
+          description: Видачу оформлено, екземпляр отримав стан `issued`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Loan' }
+              example:
+                id: 0d9b7a0e-7a63-4d1f-8f43-1a2b3c4d5e01
+                readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                copyId: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c01
+                editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                issuedAt: '2026-10-22'
+                dueDate: '2026-11-21'
+                termDays: 30
+                status: active
+                returnedAt: null
+                overdueDays: 0
+                fineRatePercent: 1
+                fineAmount: 0
+                finePaidAmount: 0
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/CopyNotAvailable' }
+
+  /loans/{loanId}:
+    parameters:
+      - $ref: '#/components/parameters/LoanId'
+    get:
+      tags: [Loans]
+      operationId: getLoan
+      summary: Картка видачі
+      description: |
+        Штраф обчислюється на льоту за поточною датою (REQ-F-027), не
+        перевищує ціни книги (REQ-F-028); при досягненні межі статус
+        автоматично стає `compensated` (REQ-F-029).
+      x-req-ids: [REQ-F-021, REQ-F-027, REQ-F-028, REQ-F-029]
+      x-roles: [reader, librarian, admin, chief_admin]
+      responses:
+        '200':
+          description: Видача.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Loan' }
+              example:
+                id: 0d9b7a0e-7a63-4d1f-8f43-1a2b3c4d5e03
+                readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                copyId: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c02
+                editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b04
+                issuedAt: '2026-08-20'
+                dueDate: '2026-09-03'
+                termDays: 14
+                status: compensated
+                returnedAt: null
+                overdueDays: 49
+                fineRatePercent: 5
+                fineAmount: 200
+                finePaidAmount: 0
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /loans/{loanId}/return:
+    parameters:
+      - $ref: '#/components/parameters/LoanId'
+    post:
+      tags: [Loans]
+      operationId: returnLoan
+      summary: Оформити повернення екземпляра
+      description: |
+        Екземпляр стає `available` або передається першому в черзі
+        (бронювання переходить у стан `ready`, REQ-F-026). Якщо було
+        прострочення, у відповіді фіксується нарахований штраф. Видача, що
+        вже повернута чи позначена `compensated`, — `409`.
+      x-req-ids: [REQ-F-020, REQ-F-026, REQ-F-027, REQ-F-028]
+      x-roles: [librarian]
+      responses:
+        '200':
+          description: Повернення оформлено.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Loan' }
+              example:
+                id: 0d9b7a0e-7a63-4d1f-8f43-1a2b3c4d5e02
+                readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                copyId: 2c8d6f3a-5b1e-4a77-9c20-7e1f0a9b8c01
+                editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01
+                issuedAt: '2026-09-15'
+                dueDate: '2026-09-29'
+                termDays: 14
+                status: returned
+                returnedAt: '2026-10-02'
+                overdueDays: 3
+                fineRatePercent: 5
+                fineAmount: 45
+                finePaidAmount: 0
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/LoanStateConflict' }
+
+  # -------------------------------------------------------- Reservations
+  /reservations:
+    post:
+      tags: [Reservations]
+      operationId: createReservation
+      summary: Забронювати видання
+      description: |
+        Якщо є доступний екземпляр — резервується на 2 дні (стан `ready`,
+        заповнено `pickupDeadline`). Якщо всі екземпляри видано — читач
+        стає в чергу (стан `queued`, заповнено `queuePosition`).
+        Створювати бронювання може лише читач для себе.
+      x-req-ids: [REQ-F-023, REQ-F-024]
+      x-roles: [reader]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReservationCreate' }
+            example: { editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b02 }
+      responses:
+        '201':
+          description: Бронювання створено (резервація або місце в черзі).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Reservation' }
+              examples:
+                ready:
+                  summary: Є доступний екземпляр
+                  value:
+                    id: 4e2a9c10-1b3d-4f58-a6c7-5d8e9f0a1b02
+                    readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                    editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b02
+                    status: ready
+                    queuePosition: null
+                    pickupDeadline: '2026-10-24T10:00:00Z'
+                    createdAt: '2026-10-22T10:00:00Z'
+                queued:
+                  summary: Усі екземпляри видано
+                  value:
+                    id: 4e2a9c10-1b3d-4f58-a6c7-5d8e9f0a1b01
+                    readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                    editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b05
+                    status: queued
+                    queuePosition: 2
+                    pickupDeadline: null
+                    createdAt: '2026-10-22T10:00:00Z'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ------------------------------------------------------------- Reports
+  /reports/top-editions:
+    get:
+      tags: [Reports]
+      operationId: getTopEditionsReport
+      summary: Звіт «Топ найпопулярніших видань»
+      description: |
+        Видання, відсортовані за кількістю видач у періоді. CSV-експорт —
+        заголовок `Accept: text/csv`, дані ті самі, що в JSON (REQ-F-042).
+      x-req-ids: [REQ-F-039, REQ-F-042]
+      x-roles: [librarian, admin, chief_admin]
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 10 }
+      responses:
+        '200':
+          description: Звіт.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TopEditionsReport' }
+              example:
+                from: '2026-09-01'
+                to: '2026-09-30'
+                generatedAt: '2026-10-22T12:00:00Z'
+                items:
+                  - { editionId: 8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01, title: Кобзар, author: Тарас Шевченко, loansCount: 17 }
+            text/csv:
+              schema: { type: string }
+              example: "editionId,title,author,loansCount\n8a1e4b2c-3d5f-4c60-8b7a-9e0f1d2c3b01,Кобзар,Тарас Шевченко,17\n"
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /reports/debtors:
+    get:
+      tags: [Reports]
+      operationId: getDebtorsReport
+      summary: Звіт «Читачі-боржники»
+      description: |
+        Читачі з простроченою видачею та/або несплаченим штрафом на момент
+        формування. CSV — `Accept: text/csv`.
+      x-req-ids: [REQ-F-040, REQ-F-042]
+      x-roles: [librarian, admin, chief_admin]
+      responses:
+        '200':
+          description: Звіт.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DebtorsReport' }
+              example:
+                generatedAt: '2026-10-22T12:00:00Z'
+                items:
+                  - readerId: 6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01
+                    fullName: Іван Петренко
+                    email: reader@example.com
+                    phone: '+380501234567'
+                    overdueLoans: 1
+                    outstandingFine: 45
+            text/csv:
+              schema: { type: string }
+              example: "readerId,fullName,email,phone,overdueLoans,outstandingFine\n6f0c1c52-4f43-4f6e-9a55-0c6a3d2c1a01,Іван Петренко,reader@example.com,+380501234567,1,45\n"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /reports/library-load:
+    get:
+      tags: [Reports]
+      operationId: getLibraryLoadReport
+      summary: Звіт «Завантаженість бібліотеки»
+      description: 'Кількість видач і повернень за період. CSV — `Accept: text/csv`.'
+      x-req-ids: [REQ-F-041, REQ-F-042]
+      x-roles: [librarian, admin, chief_admin]
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+      responses:
+        '200':
+          description: Звіт.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LibraryLoadReport' }
+              example:
+                from: '2026-09-01'
+                to: '2026-09-30'
+                generatedAt: '2026-10-22T12:00:00Z'
+                issuedCount: 120
+                returnedCount: 112
+            text/csv:
+              schema: { type: string }
+              example: "from,to,issuedCount,returnedCount\n2026-09-01,2026-09-30,120,112\n"
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  # --------------------------------------------------------------- Audit
+  /audit-log-entries:
+    get:
+      tags: [Audit]
+      operationId: listAuditLogEntries
+      summary: Аудит-лог значущих дій
+      description: Хто, що саме і коли виконав. Лише адміністратори.
+      x-req-ids: [REQ-F-049]
+      x-roles: [admin, chief_admin]
+      parameters:
+        - name: actorId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: Сторінка записів журналу.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogPage' }
+              example:
+                items:
+                  - id: 9c8b7a6f-5e4d-4c3b-a291-807f6e5d4c01
+                    actorId: 3a1b2c3d-4e5f-4a60-9b71-8c92d3e4f502
+                    actorRole: librarian
+                    action: loan.created
+                    objectType: loan
+                    objectId: 0d9b7a0e-7a63-4d1f-8f43-1a2b3c4d5e01
+                    occurredAt: '2026-10-22T10:15:00Z'
+                page: 1
+                pageSize: 20
+                total: 1
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Токен, отриманий через `POST /auth/login`.
+
+  parameters:
+    ReaderId:
+      name: readerId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EditionId:
+      name: editionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CopyId:
+      name: copyId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    LoanId:
+      name: loanId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: pageSize
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    From:
+      name: from
+      in: query
+      required: true
+      description: Початок періоду (включно).
+      schema: { type: string, format: date }
+    To:
+      name: to
+      in: query
+      required: true
+      description: Кінець періоду (включно).
+      schema: { type: string, format: date }
+
+  responses:
+    BadRequest:
+      description: Запит не відповідає схемі (відсутні обов'язкові поля, неправильні типи чи формат).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: validation_failed
+            message: Запит містить некоректні дані.
+            details:
+              - { field: title, issue: Обов'язкове поле. }
+            requestId: req-7f3a21
+    Unauthorized:
+      description: Відсутній або недійсний токен.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: unauthorized
+            message: Потрібна автентифікація.
+            requestId: req-7f3a22
+    InvalidCredentials:
+      description: Невірний email чи пароль.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: invalid_credentials
+            message: Невірний email або пароль.
+            requestId: req-7f3a23
+    Forbidden:
+      description: Роль користувача не має права на цю дію чи ресурс.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: forbidden
+            message: Недостатньо прав для цієї дії.
+            requestId: req-7f3a24
+    AccountInactive:
+      description: Акаунт деактивовано або email ще не підтверджено.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: account_inactive
+            message: Акаунт неактивний.
+            requestId: req-7f3a25
+    AccountLocked:
+      description: Акаунт заблоковано на 15 хвилин після 5 невдалих спроб входу.
+      headers:
+        Retry-After:
+          description: Секунд до розблокування.
+          schema: { type: integer, minimum: 0 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: account_locked
+            message: Акаунт тимчасово заблоковано на 15 хвилин.
+            requestId: req-7f3a26
+    ProtectedAccount:
+      description: Акаунт головного адміністратора не можна змінювати (REQ-F-011), або роль не має права.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: protected_account
+            message: Акаунт головного адміністратора змінювати заборонено.
+            requestId: req-7f3a27
+    NotFound:
+      description: Ресурс не знайдено.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: not_found
+            message: Ресурс не знайдено.
+            requestId: req-7f3a28
+    DuplicateEmail:
+      description: Email уже використовується.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: duplicate_email
+            message: Цей email уже використовується.
+            requestId: req-7f3a29
+    DuplicateIsbn:
+      description: Видання з таким ISBN уже існує.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: duplicate_isbn
+            message: Видання з таким ISBN уже є в каталозі.
+            requestId: req-7f3a2a
+    DuplicateInventoryNumber:
+      description: Інвентарний номер уже існує.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: duplicate_inventory_number
+            message: Екземпляр із таким інвентарним номером уже існує.
+            requestId: req-7f3a2b
+    CopyStateConflict:
+      description: Поточний стан екземпляра не дозволяє цю операцію.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: copy_state_conflict
+            message: Екземпляр виданий або списаний, зміна неможлива.
+            requestId: req-7f3a2c
+    CopyNotAvailable:
+      description: Екземпляр недоступний для видачі.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: copy_not_available
+            message: Екземпляр не в стані «доступний».
+            requestId: req-7f3a2d
+    LoanStateConflict:
+      description: Видача вже завершена (повернута або компенсована).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: loan_already_closed
+            message: Видача вже закрита.
+            requestId: req-7f3a2e
+    NoOutstandingFine:
+      description: У читача немає несплаченого штрафу.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example:
+            code: no_outstanding_fine
+            message: Несплачених штрафів немає.
+            requestId: req-7f3a2f
+
+  schemas:
+    Error:
+      type: object
+      description: Єдина модель помилки API.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Машиночитний код помилки.
+          enum:
+            - validation_failed
+            - unauthorized
+            - invalid_credentials
+            - forbidden
+            - account_inactive
+            - account_locked
+            - protected_account
+            - not_found
+            - duplicate_email
+            - duplicate_isbn
+            - duplicate_inventory_number
+            - copy_state_conflict
+            - copy_not_available
+            - loan_already_closed
+            - no_outstanding_fine
+        message:
+          type: string
+          description: Людиночитне пояснення.
+        details:
+          type: array
+          description: Помилки окремих полів (для validation_failed).
+          items:
+            type: object
+            required: [field, issue]
+            properties:
+              field: { type: string }
+              issue: { type: string }
+        requestId:
+          type: string
+          description: Ідентифікатор запиту для зіставлення із системним журналом (REQ-NF-005).
+
+    PageMeta:
+      type: object
+      required: [page, pageSize, total]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1, writeOnly: true }
+    LoginResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, userId, role]
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, enum: [Bearer] }
+        expiresIn: { type: integer, description: Секунд до закінчення дії токена. }
+        userId: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/Role' }
+    Role:
+      type: string
+      enum: [reader, librarian, admin, chief_admin]
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+    PasswordReset:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token: { type: string, minLength: 1 }
+        newPassword: { type: string, minLength: 8, maxLength: 128, writeOnly: true }
+    EmailConfirmation:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, minLength: 1 }
+
+    ReaderRegistration:
+      type: object
+      required: [fullName, email, phone, birthDate, password]
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 200 }
+        email: { type: string, format: email }
+        phone: { type: string, pattern: '^\+?[0-9]{10,15}$' }
+        birthDate: { type: string, format: date }
+        password: { type: string, minLength: 8, maxLength: 128, writeOnly: true }
+    Reader:
+      type: object
+      required: [id, fullName, email, phone, birthDate, status, registeredAt]
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        birthDate: { type: string, format: date }
+        status: { type: string, enum: [pending_confirmation, active] }
+        registeredAt: { type: string, format: date-time }
+    ReaderPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/Reader' }
+
+    Genre:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    GenreInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+
+    EditionInput:
+      type: object
+      required: [author, title, year, isbn, genreId, price, totalCopies]
+      properties:
+        author: { type: string, minLength: 1, maxLength: 200 }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        year: { type: integer, minimum: 1000, maximum: 2100 }
+        isbn: { type: string, pattern: '^(?:[0-9]{10}|[0-9]{13})$', description: ISBN-10 або ISBN-13 без дефісів. }
+        genreId: { type: string, format: uuid }
+        price: { type: number, minimum: 0, description: Ціна в гривнях. }
+        totalCopies: { type: integer, minimum: 0 }
+    EditionUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        author: { type: string, minLength: 1, maxLength: 200 }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        year: { type: integer, minimum: 1000, maximum: 2100 }
+        isbn: { type: string, pattern: '^(?:[0-9]{10}|[0-9]{13})$' }
+        genreId: { type: string, format: uuid }
+        price: { type: number, minimum: 0 }
+        totalCopies: { type: integer, minimum: 0 }
+    Edition:
+      type: object
+      required: [id, author, title, year, isbn, genre, price, totalCopies, availableCopies, loansCount]
+      properties:
+        id: { type: string, format: uuid }
+        author: { type: string }
+        title: { type: string }
+        year: { type: integer }
+        isbn: { type: string }
+        genre: { $ref: '#/components/schemas/Genre' }
+        price: { type: number }
+        totalCopies: { type: integer, minimum: 0 }
+        availableCopies: { type: integer, minimum: 0, description: Кількість екземплярів у стані `available`. }
+        loansCount: { type: integer, minimum: 0, description: Кількість видач за весь час (популярність). }
+    EditionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/Edition' }
+
+    CopyStatus:
+      type: string
+      enum: [available, issued, damaged, written_off]
+    CopyInput:
+      type: object
+      required: [inventoryNumber, location]
+      properties:
+        inventoryNumber: { type: string, minLength: 1, maxLength: 50 }
+        location: { type: string, minLength: 1, maxLength: 200, description: Довільний текст. }
+        status:
+          type: string
+          enum: [available, damaged]
+          default: available
+          description: Початковий стан.
+    CopyUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        location: { type: string, minLength: 1, maxLength: 200 }
+        status: { type: string, enum: [available, damaged] }
+    Copy:
+      type: object
+      required: [id, editionId, inventoryNumber, location, status]
+      properties:
+        id: { type: string, format: uuid }
+        editionId: { type: string, format: uuid }
+        inventoryNumber: { type: string }
+        location: { type: string }
+        status: { $ref: '#/components/schemas/CopyStatus' }
+
+    AccountInput:
+      type: object
+      required: [fullName, email, password]
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 200 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8, maxLength: 128, writeOnly: true }
+    AccountUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        fullName: { type: string, minLength: 1, maxLength: 200 }
+        email: { type: string, format: email }
+        active: { type: boolean }
+    Account:
+      type: object
+      required: [id, fullName, email, role, active, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        fullName: { type: string }
+        email: { type: string, format: email }
+        role:
+          type: string
+          enum: [librarian, admin, chief_admin]
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    LoanStatus:
+      type: string
+      description: |
+        `active` — видано й не повернуто; `returned` — повернуто;
+        `compensated` — «не повернуто, компенсовано повною вартістю».
+      enum: [active, returned, compensated]
+    LoanCreate:
+      type: object
+      required: [readerId, copyId]
+      properties:
+        readerId: { type: string, format: uuid }
+        copyId: { type: string, format: uuid }
+    Loan:
+      type: object
+      required: [id, readerId, copyId, editionId, issuedAt, dueDate, termDays, status, overdueDays, fineRatePercent, fineAmount, finePaidAmount]
+      properties:
+        id: { type: string, format: uuid }
+        readerId: { type: string, format: uuid }
+        copyId: { type: string, format: uuid }
+        editionId: { type: string, format: uuid }
+        issuedAt: { type: string, format: date }
+        dueDate: { type: string, format: date }
+        termDays: { type: integer, enum: [14, 30] }
+        status: { $ref: '#/components/schemas/LoanStatus' }
+        returnedAt: { type: [string, 'null'], format: date }
+        overdueDays: { type: integer, minimum: 0, description: Обчислюється на льоту за поточною датою. }
+        fineRatePercent:
+          type: integer
+          enum: [1, 5]
+          description: Відсоток ціни книги за день; зафіксований на момент видачі.
+        fineAmount: { type: number, minimum: 0, description: Нарахований штраф у гривнях, не більше ціни книги. }
+        finePaidAmount: { type: number, minimum: 0 }
+    LoanPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/Loan' }
+
+    ReservationStatus:
+      type: string
+      description: |
+        `ready` — екземпляр утримується для читача (2 дні); `queued` — читач
+        у черзі; `fulfilled` — отримано; `expired` — не отримано за 2 дні,
+        скасовано автоматично.
+      enum: [ready, queued, fulfilled, expired]
+    ReservationCreate:
+      type: object
+      required: [editionId]
+      properties:
+        editionId: { type: string, format: uuid }
+    Reservation:
+      type: object
+      required: [id, readerId, editionId, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        readerId: { type: string, format: uuid }
+        editionId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/ReservationStatus' }
+        queuePosition: { type: [integer, 'null'], minimum: 1, description: Позиція в черзі для стану `queued`. }
+        pickupDeadline: { type: [string, 'null'], format: date-time, description: Строк отримання для стану `ready`. }
+        createdAt: { type: string, format: date-time }
+    ReservationPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/Reservation' }
+
+    FineSummary:
+      type: object
+      required: [readerId, currency, totalOutstanding, items]
+      properties:
+        readerId: { type: string, format: uuid }
+        currency: { type: string, enum: [UAH] }
+        totalOutstanding: { type: number, minimum: 0 }
+        items:
+          type: array
+          items:
+            type: object
+            required: [loanId, editionTitle, fineAmount, paidAmount, outstandingAmount]
+            properties:
+              loanId: { type: string, format: uuid }
+              editionTitle: { type: string }
+              fineAmount: { type: number, minimum: 0 }
+              paidAmount: { type: number, minimum: 0 }
+              outstandingAmount: { type: number, minimum: 0 }
+    FinePaymentCreate:
+      type: object
+      required: [method]
+      properties:
+        method: { type: string, enum: [cash, card] }
+    FinePayment:
+      type: object
+      required: [id, readerId, method, amount, currency, paidAt]
+      properties:
+        id: { type: string, format: uuid }
+        readerId: { type: string, format: uuid }
+        method: { type: string, enum: [cash, card] }
+        amount: { type: number, exclusiveMinimum: 0 }
+        currency: { type: string, enum: [UAH] }
+        paidAt: { type: string, format: date-time }
+
+    Recommendation:
+      type: object
+      required: [reason, edition]
+      properties:
+        reason: { type: string, enum: [same_author, same_genre] }
+        edition: { $ref: '#/components/schemas/Edition' }
+
+    Notification:
+      type: object
+      required: [id, readerId, type, message, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        readerId: { type: string, format: uuid }
+        type: { type: string, enum: [due_soon, reservation_ready, overdue_fine] }
+        message: { type: string }
+        loanId: { type: string, format: uuid }
+        reservationId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+    NotificationPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/Notification' }
+
+    TopEditionsReport:
+      type: object
+      required: [from, to, generatedAt, items]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        generatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            required: [editionId, title, author, loansCount]
+            properties:
+              editionId: { type: string, format: uuid }
+              title: { type: string }
+              author: { type: string }
+              loansCount: { type: integer, minimum: 0 }
+    DebtorsReport:
+      type: object
+      required: [generatedAt, items]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          items:
+            type: object
+            required: [readerId, fullName, email, phone, overdueLoans, outstandingFine]
+            properties:
+              readerId: { type: string, format: uuid }
+              fullName: { type: string }
+              email: { type: string, format: email }
+              phone: { type: string }
+              overdueLoans: { type: integer, minimum: 0 }
+              outstandingFine: { type: number, minimum: 0 }
+    LibraryLoadReport:
+      type: object
+      required: [from, to, generatedAt, issuedCount, returnedCount]
+      properties:
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        generatedAt: { type: string, format: date-time }
+        issuedCount: { type: integer, minimum: 0 }
+        returnedCount: { type: integer, minimum: 0 }
+
+    AuditLogEntry:
+      type: object
+      required: [id, actorId, actorRole, action, occurredAt]
+      properties:
+        id: { type: string, format: uuid }
+        actorId: { type: string, format: uuid }
+        actorRole: { $ref: '#/components/schemas/Role' }
+        action: { type: string, description: 'Тип дії, напр. `loan.created`.' }
+        objectType: { type: string }
+        objectId: { type: string, format: uuid }
+        occurredAt: { type: string, format: date-time }
+    AuditLogPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMeta'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/AuditLogEntry' }
