@@ -1,16 +1,15 @@
 """Фіксований набір звітів і експорт у CSV (REQ-F-039...042)."""
 import csv
 import io
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from library.circulation import fine_state, outstanding
+from library.circulation import debt_of
 from library.db import Account, Edition, Loan
 from library.deps import STAFF_ROLES, get_clock, get_session, require, today
 from library.errors import validation_failed
@@ -57,17 +56,17 @@ def debtors(request: Request, session: Session = Depends(get_session), clock=Dep
             _=Depends(require(*STAFF_ROLES))):
     """Читачі з простроченою видачею та/або несплаченим штрафом на момент формування (REQ-F-040)."""
     on = today(clock)
-    overdue_loans, debt = Counter(), {}
+    loans_by_reader = defaultdict(list)
     for loan in session.scalars(select(Loan)):
-        if loan.returned_on is None and fine_state(loan, on).overdue_days > 0:
-            overdue_loans[loan.reader_id] += 1
-        debt[loan.reader_id] = debt.get(loan.reader_id, Decimal("0")) + outstanding(loan, on)
+        loans_by_reader[loan.reader_id].append(loan)
     items = []
-    for reader_id in sorted(set(overdue_loans) | {r for r, amount in debt.items() if amount > 0}):
-        reader = session.get(Account, reader_id)
-        items.append({"readerId": reader.id, "fullName": reader.full_name, "email": reader.email,
-                      "phone": reader.phone, "overdueLoans": overdue_loans[reader_id],
-                      "outstandingFine": money(debt.get(reader_id, Decimal("0")))})
+    for reader_id in sorted(loans_by_reader):
+        debt = debt_of(loans_by_reader[reader_id], on)          # те саме визначення, що й у REQ-F-051
+        if debt.exists:
+            reader = session.get(Account, reader_id)
+            items.append({"readerId": reader.id, "fullName": reader.full_name, "email": reader.email,
+                          "phone": reader.phone, "overdueLoans": debt.overdue_loans,
+                          "outstandingFine": money(debt.unpaid)})
     report = {"generatedAt": iso(clock.now()), "items": items}
     columns = ["readerId", "fullName", "email", "phone", "overdueLoans", "outstandingFine"]
     return respond(request, report, columns, items)

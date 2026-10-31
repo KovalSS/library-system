@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from library import audit
 from library.access import readable_reader
 from library.circulation import (RATE_WITH_QUEUE, RATE_WITHOUT_QUEUE, TERM_WITH_QUEUE, TERM_WITHOUT_QUEUE,
-                                 fine_state, has_queue, holding_reservation, loan_status, offer_copy)
+                                 fine_state, has_queue, holding_reservation, loan_status, offer_copy,
+                                 reader_debt)
 from library.db import Account, Copy, Edition, Loan, to_db
 from library.deps import current_account, get_clock, get_or_404, get_session, require, today
 from library.errors import ApiError, forbidden
@@ -40,6 +41,12 @@ def create_loan(body: LoanCreate, session: Session = Depends(get_session), clock
                 actor: Account = Depends(require("librarian"))):
     reader = get_or_404(session, Account, str(body.readerId), lambda a: a.role == "reader")
     copy = get_or_404(session, Copy, str(body.copyId))
+    # REQ-F-051: заборгованість перевіряється раніше за доступність екземпляра — причина стосується читача.
+    debt = reader_debt(session, reader.id, today(clock))
+    if debt.exists:
+        loans_log.warning("Відмова у видачі читачу %s: прострочених видач %d, несплачено %s грн",
+                          reader.id, debt.overdue_loans, debt.unpaid)
+        raise ApiError(409, "reader_has_debt", "У читача є прострочена видача або несплачений штраф.")
     if copy.status != "available":
         raise copy_not_available(copy.id, f"стан {copy.status}")
     reservation = holding_reservation(session, copy.id)

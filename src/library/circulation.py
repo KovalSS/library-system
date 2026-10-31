@@ -46,6 +46,28 @@ def outstanding(loan: Loan, today: date) -> Decimal:
     return fine_state(loan, today).amount - loan.fine_paid
 
 
+# --- заборгованість читача: одне визначення для звіту REQ-F-040 і відмови у видачі REQ-F-051
+@dataclass(frozen=True)
+class Debt:
+    overdue_loans: int
+    unpaid: Decimal
+
+    @property
+    def exists(self) -> bool:
+        return self.overdue_loans > 0 or self.unpaid > 0
+
+
+def debt_of(loans, today: date) -> Debt:
+    """Прострочені неповернуті видачі (зокрема компенсовані) та сума несплачених штрафів."""
+    loans = list(loans)
+    overdue = sum(1 for loan in loans if loan.returned_on is None and fine_state(loan, today).overdue_days > 0)
+    return Debt(overdue, sum((outstanding(loan, today) for loan in loans), Decimal("0")))
+
+
+def reader_debt(session: Session, reader_id: str, today: date) -> Debt:
+    return debt_of(session.scalars(select(Loan).where(Loan.reader_id == reader_id)), today)
+
+
 # --- черга й утримання екземплярів (REQ-F-023...026)
 def has_queue(session: Session, edition_id: str, except_reader: str | None = None) -> bool:
     query = select(Reservation).where(Reservation.edition_id == edition_id, Reservation.status == "queued")
