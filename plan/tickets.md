@@ -86,9 +86,14 @@
 | LS-43 | Gate | TEST-GATE-5: огляд тестів адендуму | LS-42 | LS-42 |
 | LS-44 | Feature | Перевірка заборгованості при видачі | REQ-F-051 | LS-42, LS-43 |
 | LS-45 | Verification | Регресія та верифікація адендуму | REQ-F-051, вся SRS | LS-44 |
+| LS-46 | Addendum | Рекомендації без уже отриманих видань (`spec/addendum-recommendations-exclude-received.md`) | REQ-F-052 (нова); виявлено на валідації V-6 | LS-45 |
+| LS-47 | Test | Тести виключення отриманих видань, AC-1…AC-5 | REQ-F-052 | LS-46 |
+| LS-48 | Gate | TEST-GATE-6: огляд тестів адендуму REQ-F-052 | LS-47 | LS-47 |
+| LS-49 | Feature | Виключення отриманих видань із рекомендацій | REQ-F-052 | LS-47, LS-48 |
+| LS-50 | Verification | Регресія та верифікація адендуму REQ-F-052 | REQ-F-052, вся SRS | LS-49 |
 
-Усього 45 тікетів: 7 Gate, 2 Documentation, 2 Addendum, 14 Test, 14 Feature, 5 Verification, 1 Validation
-(LS-41…LS-45 додано в лаб. №5 для адендуму REQ-F-051).
+Усього 50 тікетів: 8 Gate, 2 Documentation, 3 Addendum, 15 Test, 15 Feature, 6 Verification, 1 Validation
+(LS-41…LS-45 — адендум REQ-F-051, LS-46…LS-50 — адендум REQ-F-052; обидва додано в лаб. №5).
 
 ## 3. Вимоги з підвищеною ціною відмови (попередньо, крок 16)
 
