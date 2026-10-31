@@ -1095,8 +1095,10 @@ paths:
         5% ціни за день) фіксується в тій самій умові й надалі не змінюється
         (REQ-F-027). Екземпляр, що не в стані `available`, або екземпляр,
         утримуваний за бронюванням іншого читача (бронювання в стані `ready`),
-        — `409 copy_not_available`.
-      x-req-ids: [REQ-F-018, REQ-F-019, REQ-F-027]
+        — `409 copy_not_available`. Читач із заборгованістю (прострочена
+        неповернута видача або несплачений штраф) — `409 reader_has_debt`;
+        заборгованість перевіряється раніше за доступність екземпляра (REQ-F-051).
+      x-req-ids: [REQ-F-018, REQ-F-019, REQ-F-027, REQ-F-051]
       x-roles: [librarian]
       requestBody:
         required: true
@@ -1130,7 +1132,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/CopyNotAvailable' }
+        '409': { $ref: '#/components/responses/LoanRefused' }
 
   /loans/{loanId}:
     parameters:
@@ -1587,15 +1589,27 @@ components:
             code: copy_state_conflict
             message: Екземпляр виданий або списаний, зміна неможлива.
             requestId: req-7f3a2c
-    CopyNotAvailable:
-      description: Екземпляр не в стані `available` або утримується за бронюванням іншого читача.
+    LoanRefused:
+      description: |
+        Видачу не оформлено: екземпляр не в стані `available` або утримується за
+        бронюванням іншого читача (`copy_not_available`), або в читача є
+        заборгованість (`reader_has_debt`, REQ-F-051).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
-          example:
-            code: copy_not_available
-            message: Екземпляр не в стані «доступний».
-            requestId: req-7f3a2d
+          examples:
+            copy_not_available:
+              summary: Екземпляр недоступний
+              value:
+                code: copy_not_available
+                message: Екземпляр не в стані «доступний».
+                requestId: req-7f3a2d
+            reader_has_debt:
+              summary: У читача є заборгованість
+              value:
+                code: reader_has_debt
+                message: У читача є прострочена видача або несплачений штраф.
+                requestId: req-7f3a32
     LoanStateConflict:
       description: Видача вже завершена (повернута або компенсована).
       content:
@@ -1641,6 +1655,7 @@ components:
             - copy_not_available
             - loan_already_closed
             - no_outstanding_fine
+            - reader_has_debt
         message:
           type: string
           description: Людиночитне пояснення.
