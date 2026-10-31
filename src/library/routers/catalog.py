@@ -1,5 +1,8 @@
-"""Каталог і фонд: жанри, видання, екземпляри (REQ-F-001...008)."""
-from fastapi import APIRouter, Depends
+"""Каталог і фонд: жанри, видання, екземпляри, пошук (REQ-F-001...008, 043...046)."""
+from typing import Literal
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -9,7 +12,7 @@ from library.db import Account, Copy, Edition, Genre, Loan
 from library.deps import ADMIN_ROLES, STAFF_ROLES, current_account, get_clock, get_session, require
 from library.errors import ApiError, not_found, validation_failed
 from library.schemas import (CopyInput, CopyUpdate, EditionInput, EditionUpdate, GenreInput, copy_out,
-                             edition_out, genre_out)
+                             edition_out, genre_out, page_out)
 
 router = APIRouter()
 
@@ -71,6 +74,41 @@ def get_edition_or_404(session: Session, edition_id: str) -> Edition:
     if edition is None:
         raise not_found()
     return edition
+
+
+# --- REQ-F-043...046: пошук і фільтрація, доступні всім ролям
+SORT_KEYS = {
+    "title": lambda e: e["title"],
+    "year": lambda e: e["year"],
+    "popularity": lambda e: e["loansCount"],          # кількість видач за весь час (REQ-F-045)
+}
+
+
+@router.get("/editions")
+def search_editions(author: str | None = Query(default=None, min_length=1, max_length=200),
+                    title: str | None = Query(default=None, min_length=1, max_length=300),
+                    genreId: UUID | None = None,
+                    year: int | None = Query(default=None, ge=1000, le=2100),
+                    availableOnly: bool = False,
+                    sort: Literal["title", "year", "popularity"] = "title",
+                    order: Literal["asc", "desc"] = "asc",
+                    page: int = Query(default=1, ge=1), pageSize: int = Query(default=20, ge=1, le=100),
+                    session: Session = Depends(get_session), _: Account = Depends(current_account)):
+    # Усі задані фільтри застосовуються одночасно — перетин умов (REQ-F-043).
+    query = select(Edition)
+    if author:
+        query = query.where(Edition.author.contains(author))
+    if title:
+        query = query.where(Edition.title.contains(title))
+    if genreId:
+        query = query.where(Edition.genre_id == str(genreId))
+    if year:
+        query = query.where(Edition.year == year)
+    found = [present_edition(session, e) for e in session.scalars(query)]
+    if availableOnly:
+        found = [e for e in found if e["availableCopies"] > 0]          # REQ-F-044
+    found.sort(key=SORT_KEYS[sort], reverse=order == "desc")
+    return page_out(found[(page - 1) * pageSize: page * pageSize], page, pageSize, len(found))
 
 
 @router.post("/editions", status_code=201)
