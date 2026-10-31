@@ -1,4 +1,6 @@
 """G4: автентифікація та конфіденційність (REQ-F-047, 048, 050; REQ-NF-003; LS-06)."""
+import pytest
+
 from conftest import CHIEF
 
 
@@ -218,6 +220,19 @@ def test_librarian_searches_readers(client, api, contract):
     contract(r, "listReaders")
     assert r.status_code == 200
     assert [x["id"] for x in r.json()["items"]] == [reader["id"]]
+
+
+@pytest.mark.parametrize("q", ["Ольга", "Шевчук", "Ольга Шевчук"])
+def test_librarian_finds_reader_by_cyrillic_name(client, api, q):
+    # Дефект, знайдений на валідації (V-2): пошук за ПІБ кирилицею повертав порожній список,
+    # тож бібліотекар не міг знайти читача для видачі (REQ-F-018). Контракт: «підрядок у ПІБ».
+    olha = api.register("olha@example.com", fullName="Ольга Шевчук").json()
+    api.register("ivan@example.com", fullName="Іван Петренко")
+    _, librarian = api.create_librarian()
+
+    r = client.get("/readers", headers=librarian, params={"q": q})
+
+    assert [x["id"] for x in r.json()["items"]] == [olha["id"]]
 
 
 def test_reader_cannot_list_readers(client, api, contract):
