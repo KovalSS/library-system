@@ -1,4 +1,5 @@
 """Схеми вводу й перетворення моделей на відповіді за контрактом `spec/openapi.yaml`."""
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -35,6 +36,18 @@ class AccountUpdate(NonEmptyPatch):
     active: bool | None = None
 
 
+class ReaderRegistration(BaseModel):
+    fullName: str = Field(min_length=1, max_length=200)
+    email: str = Field(pattern=EMAIL)
+    phone: str = Field(pattern=r"^\+?[0-9]{10,15}$")
+    birthDate: date
+    password: str = Field(min_length=8, max_length=128)
+
+
+class TokenBody(BaseModel):
+    token: str = Field(min_length=1)
+
+
 def iso(moment) -> str:
     return moment.isoformat().replace("+00:00", "Z") if moment.tzinfo else moment.isoformat() + "Z"
 
@@ -42,6 +55,12 @@ def iso(moment) -> str:
 def account_out(account: Account) -> dict:
     return {"id": account.id, "fullName": account.full_name, "email": account.email,
             "role": account.role, "active": account.active, "createdAt": iso(account.created_at)}
+
+
+def reader_out(account: Account) -> dict:
+    return {"id": account.id, "fullName": account.full_name, "email": account.email, "phone": account.phone,
+            "birthDate": account.birth_date, "status": "active" if account.active else "pending_confirmation",
+            "registeredAt": iso(account.created_at)}
 
 
 Role = Literal["reader", "librarian", "admin", "chief_admin"]
