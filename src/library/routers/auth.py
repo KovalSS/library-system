@@ -3,7 +3,7 @@ import logging
 import math
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,8 +11,9 @@ from library.db import AccessToken, Account, to_db
 from library.deps import get_clock, get_session
 from library.errors import ApiError
 from library.logging_setup import LOGGER_NAME
-from library.schemas import LoginRequest
-from library.security import new_token, verify_password
+from library.routers.readers import issue_email_token, use_email_token
+from library.schemas import LoginRequest, PasswordReset, PasswordResetRequest
+from library.security import hash_password, new_token, verify_password
 
 MAX_FAILED_LOGINS = 5
 LOCK_DURATION = timedelta(minutes=15)
@@ -66,3 +67,21 @@ def login(body: LoginRequest, session: Session = Depends(get_session), clock=Dep
     session.commit()
     return {"accessToken": token, "tokenType": "Bearer", "expiresIn": 3600,
             "userId": account.id, "role": account.role}
+
+
+@router.post("/auth/password-reset-requests", status_code=202)
+def request_password_reset(body: PasswordResetRequest, request: Request, session: Session = Depends(get_session)):
+    # Відповідь однакова незалежно від того, чи існує акаунт (адендум A5).
+    account = find_login_account(session, body.email)
+    if account is not None:
+        issue_email_token(session, request, account, "password_reset")
+    return Response(status_code=202)
+
+
+@router.post("/auth/password-resets", status_code=204)
+def reset_password(body: PasswordReset, session: Session = Depends(get_session)):
+    account = use_email_token(session, body.token, "password_reset")
+    account.password_hash = hash_password(body.newPassword)
+    session.commit()
+    auth_log.info("Пароль змінено за посиланням з листа для акаунта %s", account.id)
+    return Response(status_code=204)

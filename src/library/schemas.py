@@ -44,6 +44,15 @@ class ReaderRegistration(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class PasswordResetRequest(BaseModel):
+    email: str = Field(pattern=EMAIL)
+
+
+class PasswordReset(BaseModel):
+    token: str = Field(min_length=1)
+    newPassword: str = Field(min_length=8, max_length=128)
+
+
 class TokenBody(BaseModel):
     token: str = Field(min_length=1)
 
@@ -55,6 +64,10 @@ def iso(moment) -> str:
 def account_out(account: Account) -> dict:
     return {"id": account.id, "fullName": account.full_name, "email": account.email,
             "role": account.role, "active": account.active, "createdAt": iso(account.created_at)}
+
+
+def page_out(items: list, page: int, page_size: int, total: int) -> dict:
+    return {"items": items, "page": page, "pageSize": page_size, "total": total}
 
 
 def reader_out(account: Account) -> dict:

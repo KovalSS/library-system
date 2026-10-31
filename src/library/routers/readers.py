@@ -1,12 +1,13 @@
 """Читачі: самостійна реєстрація та підтвердження email (REQ-F-015...017)."""
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from library.db import Account, EmailToken, to_db
-from library.deps import get_clock, get_session
-from library.errors import ApiError
+from library.deps import STAFF_ROLES, current_account, get_clock, get_session, require
+from library.errors import ApiError, forbidden, not_found
 from library.routers.accounts import duplicate_email, email_taken
-from library.schemas import ReaderRegistration, TokenBody, reader_out
+from library.schemas import ReaderRegistration, TokenBody, page_out, reader_out
 from library.security import hash_password, new_token
 
 router = APIRouter()
@@ -54,3 +55,32 @@ def confirm_email(body: TokenBody, session: Session = Depends(get_session)):
     reader.active = True
     session.commit()
     return reader_out(reader)
+
+
+# --- персональні дані читачів лише для власника та персоналу (REQ-F-050)
+@router.get("/readers")
+def list_readers(q: str | None = Query(default=None, min_length=1, max_length=100),
+                 page: int = Query(default=1, ge=1), pageSize: int = Query(default=20, ge=1, le=100),
+                 session: Session = Depends(get_session), _=Depends(require(*STAFF_ROLES))):
+    query = select(Account).where(Account.role == "reader")
+    if q:
+        pattern = f"%{q.lower()}%"
+        query = query.where(or_(func.lower(Account.full_name).like(pattern), func.lower(Account.email).like(pattern)))
+    total = session.scalar(select(func.count()).select_from(query.subquery()))
+    readers = session.scalars(query.order_by(Account.full_name).offset((page - 1) * pageSize).limit(pageSize))
+    return page_out([reader_out(r) for r in readers], page, pageSize, total)
+
+
+def readable_reader(session: Session, viewer: Account, reader_id: str) -> Account:
+    """Читач бачить лише себе (про чужі акаунти навіть не дізнається, чи вони існують)."""
+    if viewer.role == "reader" and viewer.id != reader_id:
+        raise forbidden()
+    reader = session.get(Account, reader_id)
+    if reader is None or reader.role != "reader":
+        raise not_found()
+    return reader
+
+
+@router.get("/readers/{reader_id}")
+def get_reader(reader_id: str, session: Session = Depends(get_session), viewer: Account = Depends(current_account)):
+    return reader_out(readable_reader(session, viewer, reader_id))
