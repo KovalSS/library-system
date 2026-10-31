@@ -58,7 +58,12 @@ def outbox():
 
 
 @pytest.fixture
-def app(log_file, db_path, clock, outbox):
+def backup_dir(tmp_path):
+    return tmp_path / "backups"
+
+
+@pytest.fixture
+def app(log_file, db_path, clock, outbox, backup_dir):
     return create_app(
         log_file=log_file,
         database_url=f"sqlite:///{db_path}",
@@ -67,6 +72,7 @@ def app(log_file, db_path, clock, outbox):
         clock=clock,
         # Тести не захищають справжніх паролів: менше повторів хешування пришвидшує прогін у десятки разів.
         password_iterations=1_000,
+        backup_dir=backup_dir,
     )
 
 
