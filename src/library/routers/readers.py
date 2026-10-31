@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from library import audit
 from library.db import Account, EmailToken, to_db
 from library.deps import STAFF_ROLES, current_account, get_clock, get_session, require
 from library.errors import ApiError, forbidden, not_found
@@ -42,18 +43,20 @@ def register_reader(body: ReaderRegistration, request: Request, session: Session
                      phone=body.phone, birth_date=body.birthDate.isoformat())
     session.add(reader)
     session.commit()
+    audit.record(session, clock, reader, "reader.registered", "reader", reader.id)
     issue_email_token(session, request, reader, "email_confirmation")
     return reader_out(reader)
 
 
 @router.post("/email-confirmations")
-def confirm_email(body: TokenBody, session: Session = Depends(get_session)):
+def confirm_email(body: TokenBody, session: Session = Depends(get_session), clock=Depends(get_clock)):
     reader = use_email_token(session, body.token, "email_confirmation")
     # Поки лист чекав, email міг підтвердити інший акаунт (REQ-F-017).
     if email_taken(session, reader.email, except_id=reader.id):
         raise invalid_token()
     reader.active = True
     session.commit()
+    audit.record(session, clock, reader, "reader.email_confirmed", "reader", reader.id)
     return reader_out(reader)
 
 

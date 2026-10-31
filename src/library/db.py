@@ -14,6 +14,8 @@ def new_id() -> str:
 
 def to_db(moment: datetime) -> datetime:
     """SQLite зберігає час без поясу: усі моменти зберігаються як UTC."""
+    if moment.tzinfo is None:
+        return moment
     return moment.astimezone(timezone.utc).replace(tzinfo=None)
 
 
@@ -84,6 +86,19 @@ class Copy(Base):
     inventory_number: Mapped[str] = mapped_column(String(50), unique=True)
     location: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="available")
+
+
+class AuditEntry(Base):
+    """Аудит-лог значущих дій користувачів (REQ-F-049), окремо від системного журналу."""
+    __tablename__ = "audit_entries"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    actor_id: Mapped[str] = mapped_column(String(36), index=True)
+    actor_role: Mapped[str] = mapped_column(String(20))
+    action: Mapped[str] = mapped_column(String(50))
+    object_type: Mapped[str] = mapped_column(String(30))
+    object_id: Mapped[str] = mapped_column(String(36))
+    occurred_at: Mapped[datetime] = mapped_column(index=True)
 
 
 def make_session_factory(database_url: str):

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from library import audit
 from library.db import Account, to_db
 from library.deps import ADMIN_ROLES, get_clock, get_session, require
 from library.errors import ApiError, not_found
@@ -24,17 +25,18 @@ def duplicate_email() -> ApiError:
     return ApiError(409, "duplicate_email", "Цей email уже використовується.")
 
 
-def create_staff(session: Session, clock, body: AccountInput, role: str) -> Account:
+def create_staff(session: Session, clock, actor: Account, body: AccountInput, role: str) -> Account:
     if email_taken(session, body.email):
         raise duplicate_email()
     account = Account(email=body.email, full_name=body.fullName, role=role,
                       password_hash=hash_password(body.password), created_at=to_db(clock.now()))
     session.add(account)
     session.commit()
+    audit.record(session, clock, actor, "account.created", role, account.id)
     return account
 
 
-def update_staff(session: Session, account: Account, body: AccountUpdate) -> Account:
+def update_staff(session: Session, clock, actor: Account, account: Account, body: AccountUpdate) -> Account:
     if body.email is not None and body.email != account.email:
         if email_taken(session, body.email, except_id=account.id):
             raise duplicate_email()
@@ -44,6 +46,8 @@ def update_staff(session: Session, account: Account, body: AccountUpdate) -> Acc
     if body.active is not None:
         account.active = body.active
     session.commit()
+    audit.record(session, clock, actor, "account.deactivated" if body.active is False else "account.updated",
+                 account.role, account.id)
     return account
 
 
@@ -55,19 +59,19 @@ def list_administrators(session: Session = Depends(get_session), _=Depends(requi
 
 @router.post("/administrators", status_code=201)
 def create_administrator(body: AccountInput, session: Session = Depends(get_session), clock=Depends(get_clock),
-                         _=Depends(require("chief_admin"))):
-    return account_out(create_staff(session, clock, body, "admin"))
+                         actor: Account = Depends(require("chief_admin"))):
+    return account_out(create_staff(session, clock, actor, body, "admin"))
 
 
 @router.patch("/administrators/{administrator_id}")
 def update_administrator(administrator_id: str, body: AccountUpdate, session: Session = Depends(get_session),
-                         _=Depends(require("chief_admin"))):
+                         clock=Depends(get_clock), actor: Account = Depends(require("chief_admin"))):
     account = session.get(Account, administrator_id)
     if account is not None and account.role == "chief_admin":
         raise ApiError(403, "protected_account", "Акаунт головного адміністратора змінювати заборонено.")
     if account is None or account.role != "admin":
         raise not_found()
-    return account_out(update_staff(session, account, body))
+    return account_out(update_staff(session, clock, actor, account, body))
 
 
 # --- бібліотекарі: адміністратори
@@ -78,14 +82,14 @@ def list_librarians(session: Session = Depends(get_session), _=Depends(require(*
 
 @router.post("/librarians", status_code=201)
 def create_librarian(body: AccountInput, session: Session = Depends(get_session), clock=Depends(get_clock),
-                     _=Depends(require(*ADMIN_ROLES))):
-    return account_out(create_staff(session, clock, body, "librarian"))
+                     actor: Account = Depends(require(*ADMIN_ROLES))):
+    return account_out(create_staff(session, clock, actor, body, "librarian"))
 
 
 @router.patch("/librarians/{librarian_id}")
 def update_librarian(librarian_id: str, body: AccountUpdate, session: Session = Depends(get_session),
-                     _=Depends(require(*ADMIN_ROLES))):
+                     clock=Depends(get_clock), actor: Account = Depends(require(*ADMIN_ROLES))):
     account = session.get(Account, librarian_id)
     if account is None or account.role != "librarian":
         raise not_found()
-    return account_out(update_staff(session, account, body))
+    return account_out(update_staff(session, clock, actor, account, body))

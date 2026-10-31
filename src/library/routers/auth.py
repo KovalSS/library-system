@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from library import audit
 from library.db import AccessToken, Account, to_db
 from library.deps import get_clock, get_session
 from library.errors import ApiError
@@ -79,9 +80,10 @@ def request_password_reset(body: PasswordResetRequest, request: Request, session
 
 
 @router.post("/auth/password-resets", status_code=204)
-def reset_password(body: PasswordReset, session: Session = Depends(get_session)):
+def reset_password(body: PasswordReset, session: Session = Depends(get_session), clock=Depends(get_clock)):
     account = use_email_token(session, body.token, "password_reset")
     account.password_hash = hash_password(body.newPassword)
     session.commit()
+    audit.record(session, clock, account, "account.password_reset", account.role, account.id)
     auth_log.info("Пароль змінено за посиланням з листа для акаунта %s", account.id)
     return Response(status_code=204)
