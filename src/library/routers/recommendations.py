@@ -28,7 +28,8 @@ def list_recommendations(reader_id: str, session: Session = Depends(get_session)
     for edition in session.scalars(select(Edition).order_by(Edition.title)):
         # Збіг за автором має пріоритет над збігом за жанром.
         reason = "same_author" if edition.author in authors else "same_genre" if edition.genre_id in genres else None
-        if reason and in_stock(session, edition.id):
+        # REQ-F-052: видання, за яким у читача є будь-яка видача, не рекомендується.
+        if reason and edition.id not in read_ids and in_stock(session, edition.id):
             recommendations.append({"reason": reason, "edition": present_edition(session, edition)})
     recommendations.sort(key=lambda r: r["reason"] != "same_author")
     return recommendations
