@@ -80,8 +80,15 @@
 | LS-37 | Validation | Валідація системи відносно задуму (`spec/idea.md`) і SRS | вся SRS | LS-36 |
 | LS-38 | Documentation | Оновлення матриці простежуваності, документація користувача | SRS 9 | LS-36 |
 | LS-39 | Gate | RELEASE-GATE: прийняття результату | LS-37, LS-38 | LS-37, LS-38 |
+| | | **Лаб. №5, крок 4–6: керована зміна через адендум** | | |
+| LS-41 | Addendum | Відмова у видачі читачу із заборгованістю (`spec/addendum-loan-refusal-for-debtors.md`) | REQ-F-051 (нова); закриває прогалину B1 | LS-35 |
+| LS-42 | Test | Тести відмови боржнику, AC-1…AC-7, BDD 8.6 | REQ-F-051 | LS-41 |
+| LS-43 | Gate | TEST-GATE-5: огляд тестів адендуму | LS-42 | LS-42 |
+| LS-44 | Feature | Перевірка заборгованості при видачі | REQ-F-051 | LS-42, LS-43 |
+| LS-45 | Verification | Регресія та верифікація адендуму | REQ-F-051, вся SRS | LS-44 |
 
-Усього 40 тікетів: 6 Gate, 2 Documentation, 1 Addendum, 13 Test, 13 Feature, 4 Verification, 1 Validation.
+Усього 45 тікетів: 7 Gate, 2 Documentation, 2 Addendum, 14 Test, 14 Feature, 5 Verification, 1 Validation
+(LS-41…LS-45 додано в лаб. №5 для адендуму REQ-F-051).
 
 ## 3. Вимоги з підвищеною ціною відмови (попередньо, крок 16)
 
