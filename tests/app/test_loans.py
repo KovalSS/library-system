@@ -48,6 +48,7 @@ def test_term_is_14_days_when_edition_has_queue(client, api, librarian):
     assert loan["dueDate"] == "2026-11-14"
 
 
+# --- REQ-F-018: видача — доступність екземпляра, ролі, валідація
 def test_issued_copy_reduces_availability_and_counts_as_loan(client, api, librarian):
     edition, [copy, _] = api.stock(librarian, copies=2)
 
