@@ -10,7 +10,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from library.db import Copy, Loan, Reservation
+from library.db import Copy, Edition, Loan, Reservation
 from library.notifications import notify_reservation_ready
 
 TERM_WITH_QUEUE, TERM_WITHOUT_QUEUE = 14, 30          # REQ-F-019
@@ -66,6 +66,40 @@ def debt_of(loans, today: date) -> Debt:
 
 def reader_debt(session: Session, reader_id: str, today: date) -> Debt:
     return debt_of(session.scalars(select(Loan).where(Loan.reader_id == reader_id)), today)
+
+
+# --- правила видачі (REQ-F-018, 019, 023, 051)
+@dataclass(frozen=True)
+class Refusal:
+    code: str
+    message: str
+    reason: str                     # для системного журналу (REQ-NF-005)
+
+
+def loan_refusal(session: Session, reader_id: str, copy: Copy, today: date) -> Refusal | None:
+    """Причина відмови у видачі або None. Заборгованість — першою: вона стосується читача, а не екземпляра."""
+    debt = reader_debt(session, reader_id, today)
+    if debt.exists:
+        return Refusal("reader_has_debt", "У читача є прострочена видача або несплачений штраф.",
+                       f"читач {reader_id}: прострочених видач {debt.overdue_loans}, несплачено {debt.unpaid} грн")
+    if copy.status != "available":
+        return Refusal("copy_not_available", "Екземпляр не в стані «доступний».",
+                       f"екземпляр {copy.id}: стан {copy.status}")
+    reservation = holding_reservation(session, copy.id)
+    if reservation is not None and reservation.reader_id != reader_id:
+        return Refusal("copy_not_available", "Екземпляр не в стані «доступний».",
+                       f"екземпляр {copy.id}: утримується бронюванням іншого читача")
+    return None
+
+
+def new_loan(session: Session, reader_id: str, copy: Copy, today: date) -> Loan:
+    """Термін і ставка визначаються чергою на момент видачі й далі не змінюються (REQ-F-019, 027)."""
+    queue = has_queue(session, copy.edition_id, except_reader=reader_id)
+    term = TERM_WITH_QUEUE if queue else TERM_WITHOUT_QUEUE
+    return Loan(reader_id=reader_id, copy_id=copy.id, edition_id=copy.edition_id, issued_on=today,
+                due_on=today + timedelta(days=term), term_days=term,
+                fine_rate_percent=RATE_WITH_QUEUE if queue else RATE_WITHOUT_QUEUE,
+                price=session.get(Edition, copy.edition_id).price)
 
 
 # --- черга й утримання екземплярів (REQ-F-023...026)

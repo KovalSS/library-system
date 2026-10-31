@@ -8,10 +8,8 @@ from sqlalchemy.orm import Session
 
 from library import audit
 from library.access import readable_reader
-from library.circulation import (RATE_WITH_QUEUE, RATE_WITHOUT_QUEUE, TERM_WITH_QUEUE, TERM_WITHOUT_QUEUE,
-                                 fine_state, has_queue, holding_reservation, loan_status, offer_copy,
-                                 reader_debt)
-from library.db import Account, Copy, Edition, Loan, to_db
+from library.circulation import fine_state, holding_reservation, loan_refusal, loan_status, new_loan, offer_copy
+from library.db import Account, Copy, Loan, to_db
 from library.deps import current_account, get_clock, get_or_404, get_session, require, today
 from library.errors import ApiError, forbidden
 from library.logging_setup import LOGGER_NAME
@@ -30,43 +28,27 @@ def loan_out(loan: Loan, on: date) -> dict:
             "fineAmount": money(fine.amount), "finePaidAmount": money(loan.fine_paid)}
 
 
-def copy_not_available(copy_id: str, reason: str) -> ApiError:
-    # Помилки критичних операцій потрапляють у системний журнал (REQ-NF-005).
-    loans_log.warning("Відмова у видачі екземпляра %s: %s", copy_id, reason)
-    return ApiError(409, "copy_not_available", "Екземпляр не в стані «доступний».")
-
-
 @router.post("/loans", status_code=201)
 def create_loan(body: LoanCreate, session: Session = Depends(get_session), clock=Depends(get_clock),
                 actor: Account = Depends(require("librarian"))):
     reader = get_or_404(session, Account, str(body.readerId), lambda a: a.role == "reader")
     copy = get_or_404(session, Copy, str(body.copyId))
-    # REQ-F-051: заборгованість перевіряється раніше за доступність екземпляра — причина стосується читача.
-    debt = reader_debt(session, reader.id, today(clock))
-    if debt.exists:
-        loans_log.warning("Відмова у видачі читачу %s: прострочених видач %d, несплачено %s грн",
-                          reader.id, debt.overdue_loans, debt.unpaid)
-        raise ApiError(409, "reader_has_debt", "У читача є прострочена видача або несплачений штраф.")
-    if copy.status != "available":
-        raise copy_not_available(copy.id, f"стан {copy.status}")
-    reservation = holding_reservation(session, copy.id)
-    if reservation is not None and reservation.reader_id != reader.id:
-        raise copy_not_available(copy.id, "утримується бронюванням іншого читача")
+    on = today(clock)                       # одна дата на весь запит: і для перевірки боргу, і для видачі
+    refusal = loan_refusal(session, reader.id, copy, on)
+    if refusal is not None:
+        # Відмови критичних операцій потрапляють у системний журнал (REQ-NF-005).
+        loans_log.warning("Відмова у видачі: %s", refusal.reason)
+        raise ApiError(409, refusal.code, refusal.message)
 
-    queue = has_queue(session, copy.edition_id, except_reader=reader.id)       # REQ-F-019, 027
-    term = TERM_WITH_QUEUE if queue else TERM_WITHOUT_QUEUE
-    issued_on = today(clock)
-    loan = Loan(reader_id=reader.id, copy_id=copy.id, edition_id=copy.edition_id, issued_on=issued_on,
-                due_on=date.fromordinal(issued_on.toordinal() + term), term_days=term,
-                fine_rate_percent=RATE_WITH_QUEUE if queue else RATE_WITHOUT_QUEUE,
-                price=session.get(Edition, copy.edition_id).price)
+    loan = new_loan(session, reader.id, copy, on)
     copy.status = "issued"
-    if reservation is not None:
+    reservation = holding_reservation(session, copy.id)
+    if reservation is not None:                                    # утримуваний для цього читача (B2)
         reservation.status = "fulfilled"
     session.add(loan)
     audit.record(session, clock, actor, "loan.created", "loan", loan)
     session.commit()
-    return loan_out(loan, issued_on)
+    return loan_out(loan, on)
 
 
 @router.get("/loans/{loan_id}")
