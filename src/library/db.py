@@ -1,0 +1,65 @@
+"""Схема бази даних (SQLite через SQLAlchemy). Внутрішня модель, не частина контракту."""
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import ForeignKey, String, create_engine, event
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
+
+def new_id() -> str:
+    return str(uuid.uuid4())
+
+
+def to_db(moment: datetime) -> datetime:
+    """SQLite зберігає час без поясу: усі моменти зберігаються як UTC."""
+    return moment.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Account(Base):
+    """Обліковий запис будь-якої ролі: reader, librarian, admin, chief_admin."""
+    __tablename__ = "accounts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    email: Mapped[str] = mapped_column(String(254), index=True)
+    full_name: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(20))
+    password_hash: Mapped[str] = mapped_column(String(200))
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime]
+    failed_logins: Mapped[int] = mapped_column(default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(default=None)
+    # Поля читача
+    phone: Mapped[str | None] = mapped_column(String(20), default=None)
+    birth_date: Mapped[str | None] = mapped_column(String(10), default=None)
+
+
+class AccessToken(Base):
+    __tablename__ = "access_tokens"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"))
+
+
+class EmailToken(Base):
+    """Одноразові токени з листів: підтвердження email і скидання пароля."""
+    __tablename__ = "email_tokens"
+
+    token: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"))
+    kind: Mapped[str] = mapped_column(String(30))
+    used: Mapped[bool] = mapped_column(default=False)
+
+
+def make_session_factory(database_url: str):
+    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _):
+        connection.execute("PRAGMA foreign_keys=ON")
+
+    Base.metadata.create_all(engine)
+    return sessionmaker(engine, expire_on_commit=False)
