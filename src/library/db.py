@@ -169,6 +169,8 @@ def make_session_factory(database_url: str):
         # (прийнятно: щодобове резервне копіювання, SLA не встановлюється — REQ-NF-002).
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=NORMAL")
+        # Вбудована lower() SQLite змінює лише латиницю; casefold() Python — будь-яку абетку, зокрема кирилицю.
+        connection.create_function("casefold", 1, lambda text: text.casefold() if text else text, deterministic=True)
 
     Base.metadata.create_all(engine)
     return sessionmaker(engine, expire_on_commit=False)

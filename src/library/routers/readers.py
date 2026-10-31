@@ -47,8 +47,9 @@ def list_readers(q: str | None = Query(default=None, min_length=1, max_length=10
                  session: Session = Depends(get_session), _=Depends(require(*STAFF_ROLES))):
     query = select(Account).where(Account.role == "reader")
     if q:
-        pattern = f"%{q.lower()}%"
-        query = query.where(or_(func.lower(Account.full_name).like(pattern), func.lower(Account.email).like(pattern)))
+        pattern = f"%{q.casefold()}%"
+        query = query.where(or_(func.casefold(Account.full_name).like(pattern),
+                                func.casefold(Account.email).like(pattern)))
     total = session.scalar(select(func.count()).select_from(query.subquery()))
     readers = session.scalars(query.order_by(Account.full_name).offset((page - 1) * pageSize).limit(pageSize))
     return page_out([reader_out(r) for r in readers], page, pageSize, total)
