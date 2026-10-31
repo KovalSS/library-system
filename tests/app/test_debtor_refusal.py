@@ -148,15 +148,17 @@ def test_refused_readers_are_exactly_the_debtors_report(client, api, librarian, 
 
 # --- BDD 8.6: відмова, оплата, повторна видача
 def test_bdd_8_6_refused_then_paid_then_issued(client, api, librarian, clock, contract):
-    edition, [first, second, kobzar] = api.stock(librarian, copies=3, price=300)
+    edition, [first, second] = api.stock(librarian, copies=2, price=300)
     api.issue(librarian, api.reader()[0]["id"], first["id"])
     api.issue(librarian, api.reader()[0]["id"], second["id"])
-    api.reserve(api.reader()[1], edition["id"])                          # черга: 14 днів, 5%
+    api.reserve(api.reader()[1], edition["id"])                          # усе видано -> черга
     ivan, _ = api.reader()
     third = api.copy(librarian, edition["id"])
     late = api.issue(librarian, ivan["id"], third["id"])
+    assert (late["termDays"], late["fineRatePercent"]) == (14, 5)          # передумова BDD 8.6: черга була
     clock.advance(days=14 + 3)
     api.give_back(librarian, late["id"])                                  # штраф 5% x 3 x 300 = 45
+    kobzar = api.copy(librarian, edition["id"])                           # доступний екземпляр «Кобзар»
 
     r = try_loan(client, librarian, ivan["id"], kobzar["id"])
     contract(r, "createLoan")
