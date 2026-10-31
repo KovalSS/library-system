@@ -12,7 +12,7 @@ from library.db import AccessToken, Account, to_db
 from library.deps import get_clock, get_hasher, get_session
 from library.errors import ApiError
 from library.logging_setup import LOGGER_NAME
-from library.routers.readers import issue_email_token, use_email_token
+from library.identity import issue_email_token, use_email_token
 from library.schemas import LoginRequest, PasswordReset, PasswordResetRequest
 from library.security import new_token, verify_password
 
@@ -75,7 +75,7 @@ def request_password_reset(body: PasswordResetRequest, request: Request, session
     # Відповідь однакова незалежно від того, чи існує акаунт (адендум A5).
     account = find_login_account(session, body.email)
     if account is not None:
-        issue_email_token(session, request, account, "password_reset")
+        issue_email_token(session, request.app.state.mailer, account, "password_reset")
     return Response(status_code=202)
 
 

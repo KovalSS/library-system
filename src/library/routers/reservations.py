@@ -4,11 +4,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from library import audit
+from library.access import readable_reader
 from library.circulation import PICKUP_PERIOD, free_copy, queue_position
 from library.db import Account, Edition, Reservation, to_db
 from library.deps import current_account, get_clock, get_or_404, get_session, require
 from library.notifications import notify_reservation_ready
-from library.routers.readers import readable_reader
 from library.schemas import ReservationCreate, ReservationStatus, iso, page_out
 
 router = APIRouter()

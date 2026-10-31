@@ -4,33 +4,13 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from library import audit
-from library.db import Account, EmailToken, to_db
-from library.deps import STAFF_ROLES, current_account, get_clock, get_hasher, get_or_404, get_session, require
-from library.errors import ApiError, forbidden
-from library.routers.accounts import duplicate_email, email_taken
+from library.access import readable_reader
+from library.db import Account, to_db
+from library.deps import STAFF_ROLES, current_account, get_clock, get_hasher, get_session, require
+from library.identity import duplicate_email, email_taken, invalid_token, issue_email_token, use_email_token
 from library.schemas import ReaderRegistration, TokenBody, page_out, reader_out
-from library.security import new_token
 
 router = APIRouter()
-
-
-def invalid_token() -> ApiError:
-    return ApiError(400, "invalid_token", "Посилання недійсне або прострочене.")
-
-
-def issue_email_token(session: Session, request: Request, account: Account, kind: str) -> None:
-    token = new_token()
-    session.add(EmailToken(token=token, account_id=account.id, kind=kind))
-    session.commit()
-    request.app.state.mailer.send(account.email, kind, token)
-
-
-def use_email_token(session: Session, token: str, kind: str) -> Account:
-    found = session.get(EmailToken, token)
-    if found is None or found.kind != kind or found.used:
-        raise invalid_token()
-    found.used = True
-    return session.get(Account, found.account_id)
 
 
 @router.post("/readers", status_code=201)
@@ -44,7 +24,7 @@ def register_reader(body: ReaderRegistration, request: Request, session: Session
     session.add(reader)
     audit.record(session, clock, reader, "reader.registered", "reader", reader)
     session.commit()
-    issue_email_token(session, request, reader, "email_confirmation")
+    issue_email_token(session, request.app.state.mailer, reader, "email_confirmation")
     return reader_out(reader)
 
 
@@ -72,13 +52,6 @@ def list_readers(q: str | None = Query(default=None, min_length=1, max_length=10
     total = session.scalar(select(func.count()).select_from(query.subquery()))
     readers = session.scalars(query.order_by(Account.full_name).offset((page - 1) * pageSize).limit(pageSize))
     return page_out([reader_out(r) for r in readers], page, pageSize, total)
-
-
-def readable_reader(session: Session, viewer: Account, reader_id: str) -> Account:
-    """Читач бачить лише себе (про чужі акаунти навіть не дізнається, чи вони існують)."""
-    if viewer.role == "reader" and viewer.id != reader_id:
-        raise forbidden()
-    return get_or_404(session, Account, reader_id, lambda a: a.role == "reader")
 
 
 @router.get("/readers/{reader_id}")

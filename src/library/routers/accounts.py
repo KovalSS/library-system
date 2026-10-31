@@ -7,21 +7,10 @@ from library import audit
 from library.db import Account, to_db
 from library.deps import ADMIN_ROLES, get_clock, get_hasher, get_or_404, get_session, require
 from library.errors import ApiError, not_found
+from library.identity import duplicate_email, email_taken
 from library.schemas import AccountInput, AccountUpdate, account_out
 
 router = APIRouter()
-
-
-def email_taken(session: Session, email: str, except_id: str | None = None) -> bool:
-    """Email зайнятий будь-яким акаунтом персоналу або підтвердженим читачем (REQ-F-017)."""
-    for account in session.scalars(select(Account).where(Account.email == email)):
-        if account.id != except_id and (account.role != "reader" or account.active):
-            return True
-    return False
-
-
-def duplicate_email() -> ApiError:
-    return ApiError(409, "duplicate_email", "Цей email уже використовується.")
 
 
 def create_staff(session: Session, clock, hasher, actor: Account, body: AccountInput, role: str) -> Account:

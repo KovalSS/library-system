@@ -7,12 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from library import audit
+from library.access import readable_reader
 from library.circulation import fine_state, outstanding
 from library.db import Account, Edition, FinePayment, Loan, to_db
 from library.deps import current_account, get_clock, get_or_404, get_session, require, today
 from library.errors import ApiError
 from library.logging_setup import LOGGER_NAME
-from library.routers.readers import readable_reader
 from library.schemas import FinePaymentCreate, iso, money
 
 router = APIRouter()

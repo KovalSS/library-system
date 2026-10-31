@@ -7,13 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from library import audit
+from library.access import readable_reader
 from library.circulation import (RATE_WITH_QUEUE, RATE_WITHOUT_QUEUE, TERM_WITH_QUEUE, TERM_WITHOUT_QUEUE,
                                  fine_state, has_queue, holding_reservation, loan_status, offer_copy)
 from library.db import Account, Copy, Edition, Loan, to_db
 from library.deps import current_account, get_clock, get_or_404, get_session, require, today
 from library.errors import ApiError, forbidden
 from library.logging_setup import LOGGER_NAME
-from library.routers.readers import readable_reader
 from library.schemas import LoanCreate, LoanStatus, money, page_out
 
 router = APIRouter()

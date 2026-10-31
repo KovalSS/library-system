@@ -3,16 +3,16 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from library import audit
-from library.circulation import available_count
-from library.db import Account, Copy, Edition, Genre, Loan
+from library.db import Account, Copy, Edition, Genre
 from library.deps import ADMIN_ROLES, STAFF_ROLES, current_account, get_clock, get_or_404, get_session, require
+from library.editions import present_edition
 from library.errors import ApiError, validation_failed
-from library.schemas import (CopyInput, CopyUpdate, EditionInput, EditionUpdate, GenreInput, copy_out,
-                             edition_out, genre_out, page_out)
+from library.schemas import (CopyInput, CopyUpdate, EditionInput, EditionUpdate, GenreInput, copy_out, genre_out,
+                             page_out)
 
 router = APIRouter()
 
@@ -47,15 +47,6 @@ def update_genre(genre_id: str, body: GenreInput, session: Session = Depends(get
 
 
 # --- REQ-F-001, 002, 008: видання
-def loans_count(session: Session, edition_id: str) -> int:
-    return session.scalar(select(func.count()).where(Loan.edition_id == edition_id))
-
-
-def present_edition(session: Session, edition: Edition) -> dict:
-    return edition_out(edition, session.get(Genre, edition.genre_id), available_count(session, edition.id),
-                       loans_count(session, edition.id))
-
-
 def existing_genre(session: Session, genre_id: str) -> None:
     # Контракт не має 404 для createEdition: невідомий жанр — помилка вхідних даних.
     if session.get(Genre, genre_id) is None:

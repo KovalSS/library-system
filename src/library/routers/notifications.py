@@ -3,10 +3,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from library.access import readable_reader
 from library.db import Account, Notification
 from library.deps import current_account, get_clock, get_session, today
 from library.notifications import sync_loan_notifications
-from library.routers.readers import readable_reader
 from library.schemas import iso, page_out
 
 router = APIRouter()
