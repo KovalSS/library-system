@@ -22,6 +22,7 @@ from library.security import DEFAULT_ITERATIONS, hash_password
 
 DEFAULT_LOG_FILE = Path("var/log/library.log")
 DEFAULT_DATABASE_URL = "sqlite:///var/library.db"
+DEFAULT_BACKUP_DIR = Path("var/backups")
 
 http_log = logging.getLogger(f"{LOGGER_NAME}.http")
 
@@ -50,6 +51,7 @@ def create_app(
     mailer: Mailer | None = None,
     clock: Clock | None = None,
     password_iterations: int = DEFAULT_ITERATIONS,
+    backup_dir: Path = DEFAULT_BACKUP_DIR,
 ) -> FastAPI:
     configure_logging(log_file)
     app = FastAPI(title="Library System API", version="1.0.0")
@@ -58,6 +60,7 @@ def create_app(
     app.state.mailer = mailer or FileOutbox(Path("var/mail/outbox.jsonl"))
     app.state.clock = clock or SystemClock()
     app.state.password_iterations = password_iterations
+    app.state.backup_dir = Path(backup_dir)
     if database_url.startswith("sqlite:///"):
         Path(database_url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
     app.state.sessions = make_session_factory(database_url)
