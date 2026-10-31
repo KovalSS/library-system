@@ -8,6 +8,7 @@ from library.circulation import PICKUP_PERIOD, free_copy, queue_position
 from library.db import Account, Edition, Reservation, to_db
 from library.deps import current_account, get_clock, get_session, require
 from library.errors import not_found
+from library.notifications import notify_reservation_ready
 from library.routers.readers import readable_reader
 from library.schemas import ReservationCreate, ReservationStatus, iso, page_out
 
@@ -35,6 +36,9 @@ def create_reservation(body: ReservationCreate, session: Session = Depends(get_s
         reservation.copy_id = copy.id
         reservation.pickup_deadline = now + PICKUP_PERIOD
     session.add(reservation)                                   # інакше REQ-F-024: черга
+    if reservation.status == "ready":
+        session.flush()
+        notify_reservation_ready(session, reservation)
     session.commit()
     audit.record(session, clock, reader, f"reservation.{reservation.status}", "reservation", reservation.id)
     return reservation_out(session, reservation)

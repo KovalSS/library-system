@@ -17,8 +17,8 @@ from library.db import Account, make_session_factory, to_db
 from library.errors import install_error_handlers
 from library.infrastructure import ChiefAdmin, Clock, FileOutbox, Mailer, SystemClock
 from library.logging_setup import LOGGER_NAME, configure_logging, request_id_var
-from library.routers import (accounts, audit_log, auth, catalog, fines, loans, readers, recommendations, reports,
-                             reservations)
+from library.routers import (accounts, audit_log, auth, catalog, fines, loans, notifications, readers,
+                             recommendations, reports, reservations)
 from library.security import DEFAULT_ITERATIONS, hash_password
 
 DEFAULT_LOG_FILE = Path("var/log/library.log")
@@ -68,7 +68,8 @@ def create_app(
     seed_chief_admin(app.state.sessions, app.state.chief_admin, app.state.clock, password_iterations)
 
     install_error_handlers(app)
-    for module in (auth, accounts, readers, catalog, loans, reservations, fines, reports, recommendations, audit_log):
+    for module in (auth, accounts, readers, catalog, loans, reservations, fines, reports, recommendations,
+                   notifications, audit_log):
         app.include_router(module.router)
 
     @app.middleware("http")

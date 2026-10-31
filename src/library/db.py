@@ -130,6 +130,21 @@ class FinePayment(Base):
     paid_at: Mapped[datetime]
 
 
+class Notification(Base):
+    """Внутрішнє сповіщення читача (REQ-F-035...038). `key` не дає створити ту саму подію двічі."""
+    __tablename__ = "notifications"
+
+    seq: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(36), unique=True, default=new_id)
+    key: Mapped[str] = mapped_column(String(120), unique=True)
+    reader_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    type: Mapped[str] = mapped_column(String(30))
+    message: Mapped[str] = mapped_column(String(300))
+    loan_id: Mapped[str | None] = mapped_column(String(36), default=None)
+    reservation_id: Mapped[str | None] = mapped_column(String(36), default=None)
+    created_at: Mapped[datetime]
+
+
 class AuditEntry(Base):
     """Аудит-лог значущих дій користувачів (REQ-F-049), окремо від системного журналу."""
     __tablename__ = "audit_entries"

@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from library.db import Copy, Loan, Reservation
+from library.notifications import notify_reservation_ready
 
 TERM_WITH_QUEUE, TERM_WITHOUT_QUEUE = 14, 30          # REQ-F-019
 RATE_WITH_QUEUE, RATE_WITHOUT_QUEUE = 5, 1            # REQ-F-027, % ціни за день
@@ -88,6 +89,7 @@ def offer_copy(session: Session, copy: Copy, moment: datetime) -> Reservation | 
         first.status = "ready"
         first.copy_id = copy.id
         first.pickup_deadline = moment + PICKUP_PERIOD
+        notify_reservation_ready(session, first)                  # REQ-F-036
     return first
 
 
