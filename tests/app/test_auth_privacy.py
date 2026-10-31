@@ -243,7 +243,9 @@ def test_passwords_are_not_stored_in_plain_text(api, db_path):
     api.reader("reader@example.com", "Plain-Text-Secret-1")
     api.create_librarian(email="lib@library.test", password="Plain-Text-Secret-2")
 
-    raw = db_path.read_bytes()
+    # Усі файли бази: дані можуть лежати і в журналі SQLite (`-wal`), а не лише в основному файлі.
+    raw = b"".join(p.read_bytes() for p in db_path.parent.glob(db_path.name + "*"))
+    assert b"reader@example.com" in raw          # тест справді бачить збережені дані
     assert b"Plain-Text-Secret-1" not in raw
     assert b"Plain-Text-Secret-2" not in raw
     assert CHIEF.password.encode() not in raw
