@@ -249,4 +249,7 @@ SCENARIOS = [
     N("N33", "Видача екземпляра, заброньованого іншим читачем", "createLoan",
       ["REQ-F-018", "REQ-F-023"], "POST", "/loans", 409, body={"readerId": READER, "copyId": COPY},
       prefer="code=409", check=lambda b: b["code"] == "copy_not_available"),
+    N("N34", "Видача читачу із заборгованістю (адендум REQ-F-051)", "createLoan", ["REQ-F-051"], "POST",
+      "/loans", 409, body={"readerId": READER, "copyId": COPY}, prefer="code=409, example=reader_has_debt",
+      check=lambda b: b["code"] == "reader_has_debt"),
 ]
