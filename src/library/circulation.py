@@ -59,9 +59,12 @@ class Debt:
 
 def debt_of(loans, today: date) -> Debt:
     """Прострочені неповернуті видачі (зокрема компенсовані) та сума несплачених штрафів."""
-    loans = list(loans)
-    overdue = sum(1 for loan in loans if loan.returned_on is None and fine_state(loan, today).overdue_days > 0)
-    return Debt(overdue, sum((outstanding(loan, today) for loan in loans), Decimal("0")))
+    overdue, unpaid = 0, Decimal("0")
+    for loan in loans:
+        fine = fine_state(loan, today)                          # один розрахунок на видачу
+        overdue += loan.returned_on is None and fine.overdue_days > 0
+        unpaid += fine.amount - loan.fine_paid
+    return Debt(overdue, unpaid)
 
 
 def reader_debt(session: Session, reader_id: str, today: date) -> Debt:
