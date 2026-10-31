@@ -5,11 +5,11 @@ from sqlalchemy.orm import Session
 
 from library import audit
 from library.db import Account, EmailToken, to_db
-from library.deps import STAFF_ROLES, current_account, get_clock, get_session, require
+from library.deps import STAFF_ROLES, current_account, get_clock, get_hasher, get_session, require
 from library.errors import ApiError, forbidden, not_found
 from library.routers.accounts import duplicate_email, email_taken
 from library.schemas import ReaderRegistration, TokenBody, page_out, reader_out
-from library.security import hash_password, new_token
+from library.security import new_token
 
 router = APIRouter()
 
@@ -35,11 +35,11 @@ def use_email_token(session: Session, token: str, kind: str) -> Account:
 
 @router.post("/readers", status_code=201)
 def register_reader(body: ReaderRegistration, request: Request, session: Session = Depends(get_session),
-                    clock=Depends(get_clock)):
+                    clock=Depends(get_clock), hasher=Depends(get_hasher)):
     if email_taken(session, body.email):
         raise duplicate_email()
     reader = Account(email=body.email, full_name=body.fullName, role="reader", active=False,
-                     password_hash=hash_password(body.password), created_at=to_db(clock.now()),
+                     password_hash=hasher(body.password), created_at=to_db(clock.now()),
                      phone=body.phone, birth_date=body.birthDate.isoformat())
     session.add(reader)
     session.commit()

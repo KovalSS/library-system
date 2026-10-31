@@ -1,5 +1,6 @@
 """Залежності запиту: сесія БД, годинник, поточний користувач і перевірка ролі."""
 from datetime import date
+from functools import partial
 
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 from library.circulation import expire_reservations
 from library.db import AccessToken, Account, to_db
 from library.errors import ApiError, forbidden
+from library.security import hash_password
 
 ADMIN_ROLES = ("admin", "chief_admin")
 STAFF_ROLES = ("librarian", "admin", "chief_admin")
@@ -21,6 +23,11 @@ def get_session(request: Request):
 
 def get_clock(request: Request):
     return request.app.state.clock
+
+
+def get_hasher(request: Request):
+    """Хешування пароля з кількістю повторів, заданою при створенні застосунку."""
+    return partial(hash_password, iterations=request.app.state.password_iterations)
 
 
 def today(clock) -> date:

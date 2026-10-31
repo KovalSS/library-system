@@ -18,7 +18,7 @@ from library.errors import install_error_handlers
 from library.infrastructure import ChiefAdmin, Clock, FileOutbox, Mailer, SystemClock
 from library.logging_setup import LOGGER_NAME, configure_logging, request_id_var
 from library.routers import accounts, audit_log, auth, catalog, fines, loans, readers, reservations
-from library.security import hash_password
+from library.security import DEFAULT_ITERATIONS, hash_password
 
 DEFAULT_LOG_FILE = Path("var/log/library.log")
 DEFAULT_DATABASE_URL = "sqlite:///var/library.db"
@@ -34,12 +34,12 @@ def default_chief_admin() -> ChiefAdmin:
     )
 
 
-def seed_chief_admin(sessions, chief: ChiefAdmin, clock: Clock) -> None:
+def seed_chief_admin(sessions, chief: ChiefAdmin, clock: Clock, iterations: int) -> None:
     """Єдиний попередньо створений головний адміністратор (REQ-F-009)."""
     with sessions() as session:
         if session.scalar(select(Account).where(Account.role == "chief_admin")) is None:
             session.add(Account(email=chief.email, full_name=chief.full_name, role="chief_admin",
-                                password_hash=hash_password(chief.password), created_at=to_db(clock.now())))
+                                password_hash=hash_password(chief.password, iterations), created_at=to_db(clock.now())))
             session.commit()
 
 
@@ -49,6 +49,7 @@ def create_app(
     chief_admin: ChiefAdmin | None = None,
     mailer: Mailer | None = None,
     clock: Clock | None = None,
+    password_iterations: int = DEFAULT_ITERATIONS,
 ) -> FastAPI:
     configure_logging(log_file)
     app = FastAPI(title="Library System API", version="1.0.0")
@@ -56,10 +57,11 @@ def create_app(
     app.state.chief_admin = chief_admin or default_chief_admin()
     app.state.mailer = mailer or FileOutbox(Path("var/mail/outbox.jsonl"))
     app.state.clock = clock or SystemClock()
+    app.state.password_iterations = password_iterations
     if database_url.startswith("sqlite:///"):
         Path(database_url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
     app.state.sessions = make_session_factory(database_url)
-    seed_chief_admin(app.state.sessions, app.state.chief_admin, app.state.clock)
+    seed_chief_admin(app.state.sessions, app.state.chief_admin, app.state.clock, password_iterations)
 
     install_error_handlers(app)
     for module in (auth, accounts, readers, catalog, loans, reservations, fines, audit_log):

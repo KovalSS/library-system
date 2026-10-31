@@ -9,12 +9,12 @@ from sqlalchemy.orm import Session
 
 from library import audit
 from library.db import AccessToken, Account, to_db
-from library.deps import get_clock, get_session
+from library.deps import get_clock, get_hasher, get_session
 from library.errors import ApiError
 from library.logging_setup import LOGGER_NAME
 from library.routers.readers import issue_email_token, use_email_token
 from library.schemas import LoginRequest, PasswordReset, PasswordResetRequest
-from library.security import hash_password, new_token, verify_password
+from library.security import new_token, verify_password
 
 MAX_FAILED_LOGINS = 5
 LOCK_DURATION = timedelta(minutes=15)
@@ -80,9 +80,10 @@ def request_password_reset(body: PasswordResetRequest, request: Request, session
 
 
 @router.post("/auth/password-resets", status_code=204)
-def reset_password(body: PasswordReset, session: Session = Depends(get_session), clock=Depends(get_clock)):
+def reset_password(body: PasswordReset, session: Session = Depends(get_session), clock=Depends(get_clock),
+                   hasher=Depends(get_hasher)):
     account = use_email_token(session, body.token, "password_reset")
-    account.password_hash = hash_password(body.newPassword)
+    account.password_hash = hasher(body.newPassword)
     session.commit()
     audit.record(session, clock, account, "account.password_reset", account.role, account.id)
     auth_log.info("Пароль змінено за посиланням з листа для акаунта %s", account.id)

@@ -5,10 +5,9 @@ from sqlalchemy.orm import Session
 
 from library import audit
 from library.db import Account, to_db
-from library.deps import ADMIN_ROLES, get_clock, get_session, require
+from library.deps import ADMIN_ROLES, get_clock, get_hasher, get_session, require
 from library.errors import ApiError, not_found
 from library.schemas import AccountInput, AccountUpdate, account_out
-from library.security import hash_password
 
 router = APIRouter()
 
@@ -25,11 +24,11 @@ def duplicate_email() -> ApiError:
     return ApiError(409, "duplicate_email", "Цей email уже використовується.")
 
 
-def create_staff(session: Session, clock, actor: Account, body: AccountInput, role: str) -> Account:
+def create_staff(session: Session, clock, hasher, actor: Account, body: AccountInput, role: str) -> Account:
     if email_taken(session, body.email):
         raise duplicate_email()
     account = Account(email=body.email, full_name=body.fullName, role=role,
-                      password_hash=hash_password(body.password), created_at=to_db(clock.now()))
+                      password_hash=hasher(body.password), created_at=to_db(clock.now()))
     session.add(account)
     session.commit()
     audit.record(session, clock, actor, "account.created", role, account.id)
@@ -59,8 +58,8 @@ def list_administrators(session: Session = Depends(get_session), _=Depends(requi
 
 @router.post("/administrators", status_code=201)
 def create_administrator(body: AccountInput, session: Session = Depends(get_session), clock=Depends(get_clock),
-                         actor: Account = Depends(require("chief_admin"))):
-    return account_out(create_staff(session, clock, actor, body, "admin"))
+                         hasher=Depends(get_hasher), actor: Account = Depends(require("chief_admin"))):
+    return account_out(create_staff(session, clock, hasher, actor, body, "admin"))
 
 
 @router.patch("/administrators/{administrator_id}")
@@ -82,8 +81,8 @@ def list_librarians(session: Session = Depends(get_session), _=Depends(require(*
 
 @router.post("/librarians", status_code=201)
 def create_librarian(body: AccountInput, session: Session = Depends(get_session), clock=Depends(get_clock),
-                     actor: Account = Depends(require(*ADMIN_ROLES))):
-    return account_out(create_staff(session, clock, actor, body, "librarian"))
+                     hasher=Depends(get_hasher), actor: Account = Depends(require(*ADMIN_ROLES))):
+    return account_out(create_staff(session, clock, hasher, actor, body, "librarian"))
 
 
 @router.patch("/librarians/{librarian_id}")
