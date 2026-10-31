@@ -4,6 +4,7 @@
 маршрути додаються лише разом із тестами (TDD, SRS розд. 1.4).
 """
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -11,16 +12,36 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from library.infrastructure import ChiefAdmin, Clock, FileOutbox, Mailer, SystemClock
 from library.logging_setup import LOGGER_NAME, configure_logging, request_id_var
 
 DEFAULT_LOG_FILE = Path("var/log/library.log")
+DEFAULT_DATABASE_URL = "sqlite:///var/library.db"
 
 http_log = logging.getLogger(f"{LOGGER_NAME}.http")
 
 
-def create_app(log_file: Path = DEFAULT_LOG_FILE) -> FastAPI:
+def default_chief_admin() -> ChiefAdmin:
+    # Значення для локальної розробки; у розгортанні задаються змінними середовища.
+    return ChiefAdmin(
+        email=os.environ.get("LIBRARY_CHIEF_EMAIL", "chief@library.local"),
+        password=os.environ.get("LIBRARY_CHIEF_PASSWORD", "Chief-Pass-2026"),
+    )
+
+
+def create_app(
+    log_file: Path = DEFAULT_LOG_FILE,
+    database_url: str = DEFAULT_DATABASE_URL,
+    chief_admin: ChiefAdmin | None = None,
+    mailer: Mailer | None = None,
+    clock: Clock | None = None,
+) -> FastAPI:
     configure_logging(log_file)
     app = FastAPI(title="Library System API", version="1.0.0")
+    app.state.database_url = database_url
+    app.state.chief_admin = chief_admin or default_chief_admin()
+    app.state.mailer = mailer or FileOutbox(Path("var/mail/outbox.jsonl"))
+    app.state.clock = clock or SystemClock()
 
     @app.middleware("http")
     async def log_every_request(request: Request, call_next):
