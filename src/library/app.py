@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
+from library.backup import DailyBackup
 from library.db import Account, make_session_factory, to_db
 from library.errors import install_error_handlers
 from library.infrastructure import ChiefAdmin, Clock, FileOutbox, Mailer, SystemClock
@@ -66,6 +67,7 @@ def create_app(
         Path(database_url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
     app.state.sessions = make_session_factory(database_url)
     seed_chief_admin(app.state.sessions, app.state.chief_admin, app.state.clock, password_iterations)
+    app.state.backup = DailyBackup(database_url, backup_dir)
 
     install_error_handlers(app)
     for module in (auth, accounts, readers, catalog, loans, reservations, fines, reports, recommendations,

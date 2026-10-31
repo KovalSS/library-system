@@ -16,8 +16,10 @@ STAFF_ROLES = ("librarian", "admin", "chief_admin")
 
 def get_session(request: Request):
     with request.app.state.sessions() as session:
-        # Дії за часом (автоскасування броні) виконуються при зверненні до даних, без фонового завдання.
-        expire_reservations(session, to_db(request.app.state.clock.now()))
+        # Дії за часом (автоскасування броні, щодобова копія) виконуються при зверненні, без фонового завдання.
+        now = to_db(request.app.state.clock.now())
+        request.app.state.backup.run_if_due(now)
+        expire_reservations(session, now)
         yield session
 
 
