@@ -92,24 +92,30 @@ def act(description, *args):
     return gh(*args) if APPLY else ""
 
 
+def add_to_board(description, url):
+    """Дошка може додавати нові тікети сама (автододавання); тоді повторне додавання не потрібне."""
+    try:
+        act(description, "project", "item-add", PROJECT, "--owner", OWNER, "--url", url)
+    except subprocess.CalledProcessError as error:
+        print(f"         пропущено: {(error.stderr or '').strip() or 'тікет, імовірно, вже на дошці'}")
+
+
 def main():
     issues = json.loads(gh("issue", "list", "--state", "all", "--limit", "200", "--json", "number,title,state,url"))
     by_ls = {m.group(1): i for i in issues if (m := re.match(r"(LS-\d+)", i["title"]))}
     bug = next((i for i in issues if i["title"] == BUG_TITLE), None)
 
-    created = {}
     for ls, (kind, title) in NEW.items():
         if ls not in by_ls:
             url = act(f"створити {ls} [{kind}] {title}", "issue", "create", "--title", f"{ls} [{kind}] {title}",
                       "--label", kind.lower(), "--body", f"Тікет лаб. №5, див. `plan/tickets.md`.\n\n{EVIDENCE[ls]}").strip()
             if url:
-                act(f"додати {ls} на дошку", "project", "item-add", PROJECT, "--owner", OWNER, "--url", url)
-                created[ls] = url.rsplit("/", 1)[-1]
+                add_to_board(f"додати {ls} на дошку", url)
     if bug is None:
         url = act("створити баг: " + BUG_TITLE, "issue", "create", "--title", BUG_TITLE, "--label", "bug",
                   "--body", BUG_BODY).strip()
         if url:
-            act("додати баг на дошку", "project", "item-add", PROJECT, "--owner", OWNER, "--url", url)
+            add_to_board("додати баг на дошку", url)
             bug = {"number": int(url.rsplit("/", 1)[-1]), "state": "OPEN"}
 
     if APPLY:
@@ -127,11 +133,13 @@ def main():
         act(f"закрити баг #{bug['number']}", "issue", "close", str(bug["number"]),
             "--comment", "Виправлено й перевірено повторно (див. опис).")
 
-    if APPLY and created:
+    # Номери всіх тікетів адендумів, зокрема створених попереднім (перерваним) запуском.
+    numbers = {ls: by_ls[ls]["number"] for ls in NEW if ls in by_ls}
+    if APPLY and numbers:
         mapping = ROOT / "issue-map.md"
         text = mapping.read_text(encoding="utf-8")
-        text = re.sub(r"\| LS-41…LS-50 \|[^\n]*\n", "", text)
-        text = text.rstrip("\n") + "\n" + "".join(f"| {ls} | #{n} |\n" for ls, n in created.items())
+        text = re.sub(r"\| LS-(?:41…LS-50|4[1-9]|50) \|[^\n]*\n", "", text)
+        text = text.rstrip("\n") + "\n" + "".join(f"| {ls} | #{n} |\n" for ls, n in numbers.items())
         mapping.write_text(text, encoding="utf-8")
         print("Оновлено plan/issue-map.md")
 
