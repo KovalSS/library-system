@@ -6,10 +6,11 @@
 
 ## 1. Які вимоги доступні через REST API (крок 1)
 
-Через API доступні 49 з 50 функціональних вимог (кожна пов'язана з операцією
-через `x-req-ids`). Єдина виняткова — **REQ-F-022**: самостійне продовження
-терміну скасовано рішенням LS-40, тому операції немає; після терміну діє лише
-штраф REQ-F-027.
+Через API доступні 50 з 51 чинної функціональної вимоги (кожна пов'язана з операцією
+через `x-req-ids`): 49 з початкових 50 і 2 вимоги, додані адендумами в лаб. №5 —
+REQ-F-051 (відмова у видачі боржнику) і REQ-F-052 (рекомендації без уже отриманих
+видань). Єдина виняткова — **REQ-F-022**: самостійне продовження скасовано
+рішенням LS-40, тому операції немає; після терміну діє лише штраф REQ-F-027.
 
 Частина вимог описує поведінку, що виконується системою без виклику клієнта; вони
 спостерігаються через стани й поля ресурсів, а не через власну операцію:
@@ -83,7 +84,7 @@
 | `listReaderReservations` | `GET /readers/{readerId}/reservations` | читач, бібліотекар, адмін, гол. адмін | REQ-F-023, REQ-F-024, REQ-F-025, REQ-F-026, REQ-F-036 | 200, 400, 401, 403, 404 |
 | `getReaderFines` | `GET /readers/{readerId}/fines` | читач, бібліотекар, адмін, гол. адмін | REQ-F-027, REQ-F-028, REQ-F-031 | 200, 401, 403, 404 |
 | `payReaderFines` | `POST /readers/{readerId}/fine-payments` | бібліотекар | REQ-F-030 | 201, 400, 401, 403, 404, 409 |
-| `listReaderRecommendations` | `GET /readers/{readerId}/recommendations` | читач, бібліотекар, адмін, гол. адмін | REQ-F-032, REQ-F-033, REQ-F-034 | 200, 401, 403, 404 |
+| `listReaderRecommendations` | `GET /readers/{readerId}/recommendations` | читач, бібліотекар, адмін, гол. адмін | REQ-F-032, REQ-F-033, REQ-F-034, REQ-F-052 | 200, 401, 403, 404 |
 | `listReaderNotifications` | `GET /readers/{readerId}/notifications` | читач, бібліотекар, адмін, гол. адмін | REQ-F-035, REQ-F-036, REQ-F-037, REQ-F-038 | 200, 400, 401, 403, 404 |
 | `listGenres` | `GET /genres` | читач, бібліотекар, адмін, гол. адмін | REQ-F-001, REQ-F-003, REQ-F-046 | 200, 401 |
 | `createGenre` | `POST /genres` | адмін, гол. адмін | REQ-F-003 | 201, 400, 401, 403 |
@@ -102,7 +103,7 @@
 | `listLibrarians` | `GET /librarians` | адмін, гол. адмін | REQ-F-013, REQ-F-014 | 200, 401, 403 |
 | `createLibrarian` | `POST /librarians` | адмін, гол. адмін | REQ-F-013 | 201, 400, 401, 403, 409 |
 | `updateLibrarian` | `PATCH /librarians/{librarianId}` | адмін, гол. адмін | REQ-F-014 | 200, 400, 401, 403, 404, 409 |
-| `createLoan` | `POST /loans` | бібліотекар | REQ-F-018, REQ-F-019, REQ-F-027 | 201, 400, 401, 403, 404, 409 |
+| `createLoan` | `POST /loans` | бібліотекар | REQ-F-018, REQ-F-019, REQ-F-027, REQ-F-051 | 201, 400, 401, 403, 404, 409 |
 | `getLoan` | `GET /loans/{loanId}` | читач, бібліотекар, адмін, гол. адмін | REQ-F-021, REQ-F-027, REQ-F-028, REQ-F-029 | 200, 401, 403, 404 |
 | `returnLoan` | `POST /loans/{loanId}/return` | бібліотекар | REQ-F-020, REQ-F-026, REQ-F-027, REQ-F-028 | 200, 401, 403, 404, 409 |
 | `createReservation` | `POST /reservations` | читач | REQ-F-023, REQ-F-024 | 201, 400, 401, 403, 404 |
@@ -147,13 +148,18 @@
 | 401 | Немає або недійсний токен; невірний пароль | `unauthorized`, `invalid_credentials` |
 | 403 | Немає права на дію; акаунт неактивний; акаунт головного адміністратора | `forbidden`, `account_inactive`, `protected_account` |
 | 404 | Ресурс не знайдено, зокрема некоректний ідентифікатор у шляху | `not_found` |
-| 409 | Дубль унікального значення або несумісний стан ресурсу | `duplicate_email`, `duplicate_isbn`, `duplicate_inventory_number`, `copy_state_conflict`, `copy_not_available`, `loan_already_closed`, `no_outstanding_fine` |
+| 409 | Дубль унікального значення або несумісний стан ресурсу | `duplicate_email`, `duplicate_isbn`, `duplicate_inventory_number`, `copy_state_conflict`, `copy_not_available`, `loan_already_closed`, `no_outstanding_fine`, `reader_has_debt` |
 | 423 | Акаунт заблоковано на 15 хв (REQ-F-048); заголовок `Retry-After` | `account_locked` |
 
 ## 7. Нова поведінка, якої немає в SRS (крок 14)
 
 Рішення, ухвалені під час проєктування й не виведені прямо з тексту SRS, оформлено
 в [`logs/api-addendum-1.md`](../logs/api-addendum-1.md). Текст SRS не змінювався.
+
+У лаб. №5 контракт змінено двома затвердженими адендумами (`spec/addendum-*.md`):
+код помилки `reader_has_debt` в операції `createLoan` (REQ-F-051) і уточнений опис
+`listReaderRecommendations` (REQ-F-052). Кожну зміну внесено окремим комітом `spec:`
+після рішення SPEC-ADDENDUM-GATE.
 
 ## 8. Перевірка контракту (кроки 9–13)
 
