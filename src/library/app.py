@@ -9,6 +9,7 @@ import time
 import uuid
 from pathlib import Path
 
+import yaml
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
@@ -25,6 +26,7 @@ from library.security import DEFAULT_ITERATIONS, hash_password
 DEFAULT_LOG_FILE = Path("var/log/library.log")
 DEFAULT_DATABASE_URL = "sqlite:///var/library.db"
 DEFAULT_BACKUP_DIR = Path("var/backups")
+CONTRACT_PATH = Path(__file__).resolve().parents[2] / "spec" / "openapi.yaml"
 
 http_log = logging.getLogger(f"{LOGGER_NAME}.http")
 
@@ -44,6 +46,15 @@ def seed_chief_admin(sessions, chief: ChiefAdmin, clock: Clock, iterations: int)
             session.add(Account(email=chief.email, full_name=chief.full_name, role="chief_admin",
                                 password_hash=hash_password(chief.password, iterations), created_at=to_db(clock.now())))
             session.commit()
+
+
+def approved_contract() -> dict:
+    """Затверджений контракт (API-GATE) для /openapi.json і /docs замість опису, згенерованого з коду.
+
+    Адреса сервера в контракті — mock лаб. №4, тому публікується відносна адреса самого сервера.
+    """
+    contract = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
+    return {**contract, "servers": [{"url": "/"}]}
 
 
 def create_app(
@@ -69,6 +80,8 @@ def create_app(
     seed_chief_admin(app.state.sessions, app.state.chief_admin, app.state.clock, password_iterations)
     app.state.backup = DailyBackup(database_url, backup_dir)
 
+    published_contract = approved_contract()
+    app.openapi = lambda: published_contract
     install_error_handlers(app)
     for module in (auth, accounts, readers, catalog, loans, reservations, fines, reports, recommendations,
                    notifications, audit_log):
