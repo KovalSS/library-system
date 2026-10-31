@@ -2,7 +2,9 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, String, create_engine, event
+from decimal import Decimal
+
+from sqlalchemy import ForeignKey, Numeric, String, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
@@ -52,6 +54,36 @@ class EmailToken(Base):
     account_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"))
     kind: Mapped[str] = mapped_column(String(30))
     used: Mapped[bool] = mapped_column(default=False)
+
+
+class Genre(Base):
+    __tablename__ = "genres"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(100))
+
+
+class Edition(Base):
+    __tablename__ = "editions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    author: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str] = mapped_column(String(300))
+    year: Mapped[int]
+    isbn: Mapped[str] = mapped_column(String(13), unique=True)
+    genre_id: Mapped[str] = mapped_column(ForeignKey("genres.id"))
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    total_copies: Mapped[int]
+
+
+class Copy(Base):
+    __tablename__ = "copies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    edition_id: Mapped[str] = mapped_column(ForeignKey("editions.id"))
+    inventory_number: Mapped[str] = mapped_column(String(50), unique=True)
+    location: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20), default="available")
 
 
 def make_session_factory(database_url: str):

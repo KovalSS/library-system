@@ -1,12 +1,14 @@
 """Схеми вводу й перетворення моделей на відповіді за контрактом `spec/openapi.yaml`."""
 from datetime import date
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from library.db import Account
+from library.db import Account, Copy, Edition, Genre
 
 EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+ISBN = r"^(?:[0-9]{9}[0-9X]|[0-9]{13})$"
 
 
 class NonEmptyPatch(BaseModel):
@@ -55,6 +57,60 @@ class PasswordReset(BaseModel):
 
 class TokenBody(BaseModel):
     token: str = Field(min_length=1)
+
+
+class GenreInput(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class EditionInput(BaseModel):
+    author: str = Field(min_length=1, max_length=200)
+    title: str = Field(min_length=1, max_length=300)
+    year: int = Field(ge=1000, le=2100)
+    isbn: str = Field(pattern=ISBN)
+    genreId: str
+    price: Decimal = Field(ge=0)
+    totalCopies: int = Field(ge=0)
+
+
+class EditionUpdate(NonEmptyPatch):
+    author: str | None = Field(default=None, min_length=1, max_length=200)
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    year: int | None = Field(default=None, ge=1000, le=2100)
+    isbn: str | None = Field(default=None, pattern=ISBN)
+    genreId: str | None = None
+    price: Decimal | None = Field(default=None, ge=0)
+    totalCopies: int | None = Field(default=None, ge=0)
+
+
+class CopyInput(BaseModel):
+    inventoryNumber: str = Field(min_length=1, max_length=50)
+    location: str = Field(min_length=1, max_length=200)
+    status: Literal["available", "damaged"] = "available"
+
+
+class CopyUpdate(NonEmptyPatch):
+    location: str | None = Field(default=None, min_length=1, max_length=200)
+    status: Literal["available", "damaged"] | None = None
+
+
+def money(amount: Decimal) -> int | float:
+    return int(amount) if amount == int(amount) else float(amount)
+
+
+def genre_out(genre: Genre) -> dict:
+    return {"id": genre.id, "name": genre.name}
+
+
+def edition_out(edition: Edition, genre: Genre, available: int, loans: int) -> dict:
+    return {"id": edition.id, "author": edition.author, "title": edition.title, "year": edition.year,
+            "isbn": edition.isbn, "genre": genre_out(genre), "price": money(edition.price),
+            "totalCopies": edition.total_copies, "availableCopies": available, "loansCount": loans}
+
+
+def copy_out(copy: Copy) -> dict:
+    return {"id": copy.id, "editionId": copy.edition_id, "inventoryNumber": copy.inventory_number,
+            "location": copy.location, "status": copy.status}
 
 
 def iso(moment) -> str:
