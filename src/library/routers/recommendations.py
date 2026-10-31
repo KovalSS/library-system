@@ -17,6 +17,15 @@ def in_stock(session: Session, edition_id: str) -> bool:
                           .limit(1)) is not None
 
 
+def recommendation_reason(edition: Edition, authors: set[str], genres: set[str]) -> str | None:
+    """Збіг за автором має пріоритет над збігом за жанром (REQ-F-032, 033)."""
+    if edition.author in authors:
+        return "same_author"
+    if edition.genre_id in genres:
+        return "same_genre"
+    return None
+
+
 @router.get("/readers/{reader_id}/recommendations")
 def list_recommendations(reader_id: str, session: Session = Depends(get_session),
                          viewer: Account = Depends(current_account)):
@@ -26,8 +35,7 @@ def list_recommendations(reader_id: str, session: Session = Depends(get_session)
     authors, genres = {e.author for e in read}, {e.genre_id for e in read}
     recommendations = []
     for edition in session.scalars(select(Edition).order_by(Edition.title)):
-        # Збіг за автором має пріоритет над збігом за жанром.
-        reason = "same_author" if edition.author in authors else "same_genre" if edition.genre_id in genres else None
+        reason = recommendation_reason(edition, authors, genres)
         # REQ-F-052: видання, за яким у читача є будь-яка видача, не рекомендується.
         if reason and edition.id not in read_ids and in_stock(session, edition.id):
             recommendations.append({"reason": reason, "edition": present_edition(session, edition)})
