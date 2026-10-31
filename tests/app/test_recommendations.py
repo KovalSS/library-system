@@ -114,8 +114,9 @@ def test_unreceived_editions_of_same_author_and_genre_are_still_recommended(clie
 
 
 def test_reader_who_received_everything_related_gets_empty_list(client, api, librarian, shelf):
-    # AC-4: порожній список, а не помилка.
-    for edition in (shelf["same_author"], shelf["same_genre"]):
+    # AC-4: порожній список, а не помилка. «Гайдамаки» належать до жанру «повість», тож після їх
+    # отримання пов'язаним стає й «Захар Беркут» — читач має отримати і його.
+    for edition in (shelf["same_author"], shelf["same_genre"], shelf["unrelated"]):
         api.issue(librarian, shelf["reader"]["id"], client_copy_id(api, librarian, edition))
 
     r = client.get(f"/readers/{shelf['reader']['id']}/recommendations", headers=shelf["headers"])
