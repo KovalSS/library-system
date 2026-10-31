@@ -36,8 +36,8 @@ def create_reservation(body: ReservationCreate, session: Session = Depends(get_s
     if reservation.status == "ready":
         session.flush()
         notify_reservation_ready(session, reservation)
+    audit.record(session, clock, reader, f"reservation.{reservation.status}", "reservation", reservation)
     session.commit()
-    audit.record(session, clock, reader, f"reservation.{reservation.status}", "reservation", reservation.id)
     return reservation_out(session, reservation)
 
 

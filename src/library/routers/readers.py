@@ -42,8 +42,8 @@ def register_reader(body: ReaderRegistration, request: Request, session: Session
                      password_hash=hasher(body.password), created_at=to_db(clock.now()),
                      phone=body.phone, birth_date=body.birthDate.isoformat())
     session.add(reader)
+    audit.record(session, clock, reader, "reader.registered", "reader", reader)
     session.commit()
-    audit.record(session, clock, reader, "reader.registered", "reader", reader.id)
     issue_email_token(session, request, reader, "email_confirmation")
     return reader_out(reader)
 
@@ -55,8 +55,8 @@ def confirm_email(body: TokenBody, session: Session = Depends(get_session), cloc
     if email_taken(session, reader.email, except_id=reader.id):
         raise invalid_token()
     reader.active = True
+    audit.record(session, clock, reader, "reader.email_confirmed", "reader", reader)
     session.commit()
-    audit.record(session, clock, reader, "reader.email_confirmed", "reader", reader.id)
     return reader_out(reader)
 
 

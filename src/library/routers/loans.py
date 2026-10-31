@@ -57,8 +57,8 @@ def create_loan(body: LoanCreate, session: Session = Depends(get_session), clock
     if reservation is not None:
         reservation.status = "fulfilled"
     session.add(loan)
+    audit.record(session, clock, actor, "loan.created", "loan", loan)
     session.commit()
-    audit.record(session, clock, actor, "loan.created", "loan", loan.id)
     return loan_out(loan, issued_on)
 
 
@@ -84,8 +84,8 @@ def return_loan(loan_id: str, session: Session = Depends(get_session), clock=Dep
     copy.status = "available"
     session.flush()
     offer_copy(session, copy, to_db(clock.now()))                              # REQ-F-026
+    audit.record(session, clock, actor, "loan.returned", "loan", loan)
     session.commit()
-    audit.record(session, clock, actor, "loan.returned", "loan", loan.id)
     return loan_out(loan, on)
 
 

@@ -54,7 +54,7 @@ def pay_reader_fines(reader_id: str, body: FinePaymentCreate, session: Session =
         loan.fine_paid = fine_state(loan, on).amount
     payment = FinePayment(reader_id=reader_id, method=body.method, amount=total, paid_at=to_db(clock.now()))
     session.add(payment)
+    audit.record(session, clock, actor, "fine.paid", "fine_payment", payment)
     session.commit()
-    audit.record(session, clock, actor, "fine.paid", "fine_payment", payment.id)
     return {"id": payment.id, "readerId": reader_id, "method": payment.method, "amount": money(total),
             "currency": "UAH", "paidAt": iso(payment.paid_at)}

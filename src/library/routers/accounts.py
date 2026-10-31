@@ -30,8 +30,8 @@ def create_staff(session: Session, clock, hasher, actor: Account, body: AccountI
     account = Account(email=body.email, full_name=body.fullName, role=role,
                       password_hash=hasher(body.password), created_at=to_db(clock.now()))
     session.add(account)
+    audit.record(session, clock, actor, "account.created", role, account)
     session.commit()
-    audit.record(session, clock, actor, "account.created", role, account.id)
     return account
 
 
@@ -44,9 +44,9 @@ def update_staff(session: Session, clock, actor: Account, account: Account, body
         account.full_name = body.fullName
     if body.active is not None:
         account.active = body.active
-    session.commit()
     audit.record(session, clock, actor, "account.deactivated" if body.active is False else "account.updated",
-                 account.role, account.id)
+                 account.role, account)
+    session.commit()
     return account
 
 

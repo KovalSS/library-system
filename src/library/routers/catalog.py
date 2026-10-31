@@ -31,8 +31,8 @@ def create_genre(body: GenreInput, session: Session = Depends(get_session), cloc
                  actor: Account = Depends(require(*ADMIN_ROLES))):
     genre = Genre(name=body.name)
     session.add(genre)
+    audit.record(session, clock, actor, "genre.created", "genre", genre)
     session.commit()
-    audit.record(session, clock, actor, "genre.created", "genre", genre.id)
     return genre_out(genre)
 
 
@@ -41,8 +41,8 @@ def update_genre(genre_id: str, body: GenreInput, session: Session = Depends(get
                  clock=Depends(get_clock), actor: Account = Depends(require(*ADMIN_ROLES))):
     genre = get_or_404(session, Genre, genre_id)
     genre.name = body.name
+    audit.record(session, clock, actor, "genre.updated", "genre", genre)
     session.commit()
-    audit.record(session, clock, actor, "genre.updated", "genre", genre.id)
     return genre_out(genre)
 
 
@@ -111,8 +111,8 @@ def create_edition(body: EditionInput, session: Session = Depends(get_session), 
     edition = Edition(author=body.author, title=body.title, year=body.year, isbn=body.isbn,
                       genre_id=body.genreId, price=body.price, total_copies=body.totalCopies)
     session.add(edition)
+    audit.record(session, clock, actor, "edition.created", "edition", edition)
     session.commit()
-    audit.record(session, clock, actor, "edition.created", "edition", edition.id)
     return present_edition(session, edition)
 
 
@@ -136,8 +136,8 @@ def update_edition(edition_id: str, body: EditionUpdate, session: Session = Depe
         value = getattr(body, field)
         if value is not None:
             setattr(edition, column, value)
+    audit.record(session, clock, actor, "edition.updated", "edition", edition)
     session.commit()
-    audit.record(session, clock, actor, "edition.updated", "edition", edition.id)
     return present_edition(session, edition)
 
 
@@ -158,8 +158,8 @@ def create_copy(edition_id: str, body: CopyInput, session: Session = Depends(get
     copy = Copy(edition_id=edition_id, inventory_number=body.inventoryNumber, location=body.location,
                 status=body.status)
     session.add(copy)
+    audit.record(session, clock, actor, "copy.created", "copy", copy)
     session.commit()
-    audit.record(session, clock, actor, "copy.created", "copy", copy.id)
     return copy_out(copy)
 
 
@@ -177,8 +177,8 @@ def update_copy(copy_id: str, body: CopyUpdate, session: Session = Depends(get_s
         copy.status = body.status
     if body.location is not None:
         copy.location = body.location
+    audit.record(session, clock, actor, "copy.updated", "copy", copy)
     session.commit()
-    audit.record(session, clock, actor, "copy.updated", "copy", copy.id)
     return copy_out(copy)
 
 
@@ -189,6 +189,6 @@ def write_off_copy(copy_id: str, session: Session = Depends(get_session), clock=
     if copy.status in SYSTEM_MANAGED_STATES:
         raise copy_state_conflict()
     copy.status = "written_off"
+    audit.record(session, clock, actor, "copy.written_off", "copy", copy)
     session.commit()
-    audit.record(session, clock, actor, "copy.written_off", "copy", copy.id)
     return copy_out(copy)

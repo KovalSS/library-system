@@ -84,7 +84,7 @@ def reset_password(body: PasswordReset, session: Session = Depends(get_session),
                    hasher=Depends(get_hasher)):
     account = use_email_token(session, body.token, "password_reset")
     account.password_hash = hasher(body.newPassword)
+    audit.record(session, clock, account, "account.password_reset", account.role, account)
     session.commit()
-    audit.record(session, clock, account, "account.password_reset", account.role, account.id)
     auth_log.info("Пароль змінено за посиланням з листа для акаунта %s", account.id)
     return Response(status_code=204)
