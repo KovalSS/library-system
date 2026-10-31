@@ -166,6 +166,41 @@ class Api:
         assert r.status_code == 201, r.text
         return r.json()
 
+    def stock(self, librarian, copies=1, price=300):
+        """Видання з указаною ціною та кількістю доступних екземплярів: (видання, [екземпляри])."""
+        edition = self.edition(librarian, price=price)
+        return edition, [self.copy(librarian, edition["id"]) for _ in range(copies)]
+
+    def issue(self, librarian, reader_id, copy_id):
+        r = self.client.post("/loans", headers=librarian, json={"readerId": reader_id, "copyId": copy_id})
+        assert r.status_code == 201, r.text
+        return r.json()
+
+    def give_back(self, librarian, loan_id):
+        r = self.client.post(f"/loans/{loan_id}/return", headers=librarian)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def reserve(self, reader_headers, edition_id):
+        r = self.client.post("/reservations", headers=reader_headers, json={"editionId": edition_id})
+        assert r.status_code == 201, r.text
+        return r.json()
+
+    def reservations(self, reader, reader_headers):
+        r = self.client.get(f"/readers/{reader['id']}/reservations", headers=reader_headers)
+        assert r.status_code == 200, r.text
+        return {x["id"]: x for x in r.json()["items"]}
+
+    def loan(self, headers, loan_id):
+        r = self.client.get(f"/loans/{loan_id}", headers=headers)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def fines(self, reader, headers):
+        r = self.client.get(f"/readers/{reader['id']}/fines", headers=headers)
+        assert r.status_code == 200, r.text
+        return r.json()
+
 
 @pytest.fixture
 def api(client, outbox):
