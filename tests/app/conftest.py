@@ -65,13 +65,17 @@ def app(log_file, db_path, clock, outbox):
         chief_admin=CHIEF,
         mailer=outbox,
         clock=clock,
+        # Тести не захищають справжніх паролів: менше повторів хешування пришвидшує прогін у десятки разів.
+        password_iterations=1_000,
     )
 
 
 @pytest.fixture
 def client(app):
     # Необроблені винятки мають перетворюватися на відповідь 500, а не падати в тесті.
-    return TestClient(app, raise_server_exceptions=False)
+    # Клієнт відкривається один раз на тест: без `with` він запускає новий цикл подій на кожен запит.
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        yield test_client
 
 
 @pytest.fixture
