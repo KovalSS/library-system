@@ -1,9 +1,40 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
+from contract import assert_contract
 from library.app import create_app
+from library.infrastructure import ChiefAdmin
+
+CHIEF = ChiefAdmin(email="chief@library.test", password="Chief-Pass-2026")
+
+
+class FakeClock:
+    def __init__(self):
+        self.current = datetime(2026, 10, 31, 10, 0, tzinfo=timezone.utc)
+
+    def now(self):
+        return self.current
+
+    def advance(self, **delta):
+        self.current += timedelta(**delta)
+
+
+class Outbox:
+    """Підміна пошти: зберігає листи, щоб тест дістав токен із листа."""
+
+    def __init__(self):
+        self.messages = []
+
+    def send(self, to, kind, token):
+        self.messages.append({"to": to, "kind": kind, "token": token})
+
+    def last(self, to, kind):
+        found = [m for m in self.messages if m["to"] == to and m["kind"] == kind]
+        assert found, f"листа {kind} для {to} немає"
+        return found[-1]["token"]
 
 
 @pytest.fixture
@@ -12,8 +43,29 @@ def log_file(tmp_path):
 
 
 @pytest.fixture
-def app(log_file):
-    return create_app(log_file=log_file)
+def db_path(tmp_path):
+    return tmp_path / "library.db"
+
+
+@pytest.fixture
+def clock():
+    return FakeClock()
+
+
+@pytest.fixture
+def outbox():
+    return Outbox()
+
+
+@pytest.fixture
+def app(log_file, db_path, clock, outbox):
+    return create_app(
+        log_file=log_file,
+        database_url=f"sqlite:///{db_path}",
+        chief_admin=CHIEF,
+        mailer=outbox,
+        clock=clock,
+    )
 
 
 @pytest.fixture
@@ -30,3 +82,96 @@ def read_log(log_file):
             return []
         return [json.loads(line) for line in log_file.read_text(encoding="utf-8").splitlines() if line.strip()]
     return read
+
+
+def bearer(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+class Api:
+    """Підготовка даних через публічний API (лише операції контракту)."""
+
+    def __init__(self, client, outbox):
+        self.client = client
+        self.outbox = outbox
+        self._counter = 0
+
+    def unique(self, prefix):
+        self._counter += 1
+        return f"{prefix}{self._counter}"
+
+    def login(self, email, password):
+        r = self.client.post("/auth/login", json={"email": email, "password": password})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def token(self, email, password):
+        return self.login(email, password)["accessToken"]
+
+    @property
+    def chief(self):
+        return bearer(self.token(CHIEF.email, CHIEF.password))
+
+    def create_admin(self, email=None, password="Adm1n-Pass-2026", full_name="Олена Коваль"):
+        email = email or f"{self.unique('admin')}@library.test"
+        r = self.client.post("/administrators", headers=self.chief,
+                             json={"fullName": full_name, "email": email, "password": password})
+        assert r.status_code == 201, r.text
+        return r.json(), bearer(self.token(email, password))
+
+    def create_librarian(self, email=None, password="L1brarian-Pass", full_name="Марія Гнатюк"):
+        email = email or f"{self.unique('librarian')}@library.test"
+        r = self.client.post("/librarians", headers=self.chief,
+                             json={"fullName": full_name, "email": email, "password": password})
+        assert r.status_code == 201, r.text
+        return r.json(), bearer(self.token(email, password))
+
+    def register(self, email=None, password="S3cret-pass", **fields):
+        email = email or f"{self.unique('reader')}@example.com"
+        body = {"fullName": "Іван Петренко", "email": email, "phone": "+380501234567",
+                "birthDate": "1995-04-12", "password": password, **fields}
+        return self.client.post("/readers", json=body)
+
+    def reader(self, email=None, password="S3cret-pass"):
+        """Зареєстрований і підтверджений читач: (профіль, заголовки авторизації)."""
+        email = email or f"{self.unique('reader')}@example.com"
+        r = self.register(email, password)
+        assert r.status_code == 201, r.text
+        token = self.outbox.last(email, "email_confirmation")
+        r = self.client.post("/email-confirmations", json={"token": token})
+        assert r.status_code == 200, r.text
+        return r.json(), bearer(self.token(email, password))
+
+    def genre(self, name=None):
+        _, admin = self.create_admin()
+        r = self.client.post("/genres", headers=admin, json={"name": name or self.unique("Жанр ")})
+        assert r.status_code == 201, r.text
+        return r.json()
+
+    def edition(self, librarian, **fields):
+        genre_id = fields.pop("genreId", None) or self.genre()["id"]
+        body = {"author": "Тарас Шевченко", "title": "Кобзар", "year": 1840,
+                "isbn": self.isbn(), "genreId": genre_id, "price": 300, "totalCopies": 5, **fields}
+        r = self.client.post("/editions", headers=librarian, json=body)
+        assert r.status_code == 201, r.text
+        return r.json()
+
+    def isbn(self):
+        self._counter += 1
+        return f"978617{self._counter:07d}"
+
+    def copy(self, librarian, edition_id, **fields):
+        body = {"inventoryNumber": self.unique("INV-"), "location": "Зал 1, стелаж 1", **fields}
+        r = self.client.post(f"/editions/{edition_id}/copies", headers=librarian, json=body)
+        assert r.status_code == 201, r.text
+        return r.json()
+
+
+@pytest.fixture
+def api(client, outbox):
+    return Api(client, outbox)
+
+
+@pytest.fixture
+def contract():
+    return assert_contract
