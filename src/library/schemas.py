@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from uuid import UUID
+
 from library.db import Account, Copy, Edition, Genre
 
 EMAIL = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
@@ -92,6 +94,23 @@ class CopyInput(BaseModel):
 class CopyUpdate(NonEmptyPatch):
     location: str | None = Field(default=None, min_length=1, max_length=200)
     status: Literal["available", "damaged"] | None = None
+
+
+class LoanCreate(BaseModel):
+    readerId: UUID
+    copyId: UUID
+
+
+class ReservationCreate(BaseModel):
+    editionId: UUID
+
+
+class FinePaymentCreate(BaseModel):
+    method: Literal["cash", "card"]
+
+
+LoanStatus = Literal["active", "returned", "compensated"]
+ReservationStatus = Literal["ready", "queued", "fulfilled", "expired"]
 
 
 def money(amount: Decimal) -> int | float:

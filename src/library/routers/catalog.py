@@ -4,7 +4,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from library import audit
-from library.db import Account, Copy, Edition, Genre
+from library.circulation import available_count
+from library.db import Account, Copy, Edition, Genre, Loan
 from library.deps import ADMIN_ROLES, STAFF_ROLES, current_account, get_clock, get_session, require
 from library.errors import ApiError, not_found, validation_failed
 from library.schemas import (CopyInput, CopyUpdate, EditionInput, EditionUpdate, GenreInput, copy_out,
@@ -44,12 +45,13 @@ def update_genre(genre_id: str, body: GenreInput, session: Session = Depends(get
 
 
 # --- REQ-F-001, 002, 008: видання
-def available_copies(session: Session, edition_id: str) -> int:
-    return session.scalar(select(func.count()).where(Copy.edition_id == edition_id, Copy.status == "available"))
+def loans_count(session: Session, edition_id: str) -> int:
+    return session.scalar(select(func.count()).where(Loan.edition_id == edition_id))
 
 
 def present_edition(session: Session, edition: Edition) -> dict:
-    return edition_out(edition, session.get(Genre, edition.genre_id), available_copies(session, edition.id), loans=0)
+    return edition_out(edition, session.get(Genre, edition.genre_id), available_count(session, edition.id),
+                       loans_count(session, edition.id))
 
 
 def existing_genre(session: Session, genre_id: str) -> None:

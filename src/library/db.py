@@ -1,6 +1,6 @@
 """Схема бази даних (SQLite через SQLAlchemy). Внутрішня модель, не частина контракту."""
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from decimal import Decimal
 
@@ -86,6 +86,48 @@ class Copy(Base):
     inventory_number: Mapped[str] = mapped_column(String(50), unique=True)
     location: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20), default="available")
+
+
+class Loan(Base):
+    """Видача екземпляра читачу. Штраф і статус «компенсовано» обчислюються на льоту (REQ-F-027, 029)."""
+    __tablename__ = "loans"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    reader_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    copy_id: Mapped[str] = mapped_column(ForeignKey("copies.id"))
+    edition_id: Mapped[str] = mapped_column(ForeignKey("editions.id"), index=True)
+    issued_on: Mapped[date]
+    due_on: Mapped[date]
+    term_days: Mapped[int]
+    fine_rate_percent: Mapped[int]
+    # Ціна фіксується при видачі разом зі ставкою: подальша зміна ціни видання не змінює штраф.
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    returned_on: Mapped[date | None] = mapped_column(default=None)
+    fine_paid: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0"))
+
+
+class Reservation(Base):
+    """Бронювання (`ready`, утримує екземпляр) або місце в черзі (`queued`)."""
+    __tablename__ = "reservations"
+
+    seq: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[str] = mapped_column(String(36), unique=True, default=new_id)
+    reader_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    edition_id: Mapped[str] = mapped_column(ForeignKey("editions.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20))
+    copy_id: Mapped[str | None] = mapped_column(ForeignKey("copies.id"), default=None)
+    pickup_deadline: Mapped[datetime | None] = mapped_column(default=None)
+    created_at: Mapped[datetime]
+
+
+class FinePayment(Base):
+    __tablename__ = "fine_payments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    reader_id: Mapped[str] = mapped_column(ForeignKey("accounts.id"), index=True)
+    method: Mapped[str] = mapped_column(String(10))
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    paid_at: Mapped[datetime]
 
 
 class AuditEntry(Base):

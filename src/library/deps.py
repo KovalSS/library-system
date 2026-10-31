@@ -1,8 +1,11 @@
 """Залежності запиту: сесія БД, годинник, поточний користувач і перевірка ролі."""
+from datetime import date
+
 from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
-from library.db import AccessToken, Account
+from library.circulation import expire_reservations
+from library.db import AccessToken, Account, to_db
 from library.errors import ApiError, forbidden
 
 ADMIN_ROLES = ("admin", "chief_admin")
@@ -11,11 +14,17 @@ STAFF_ROLES = ("librarian", "admin", "chief_admin")
 
 def get_session(request: Request):
     with request.app.state.sessions() as session:
+        # Дії за часом (автоскасування броні) виконуються при зверненні до даних, без фонового завдання.
+        expire_reservations(session, to_db(request.app.state.clock.now()))
         yield session
 
 
 def get_clock(request: Request):
     return request.app.state.clock
+
+
+def today(clock) -> date:
+    return to_db(clock.now()).date()
 
 
 def current_account(request: Request, session: Session = Depends(get_session)) -> Account:
