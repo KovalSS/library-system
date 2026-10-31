@@ -69,7 +69,8 @@ def debtors(request: Request, session: Session = Depends(get_session), clock=Dep
                       "phone": reader.phone, "overdueLoans": overdue_loans[reader_id],
                       "outstandingFine": money(debt.get(reader_id, Decimal("0")))})
     report = {"generatedAt": iso(clock.now()), "items": items}
-    return respond(request, report, ["readerId", "fullName", "email", "phone", "overdueLoans", "outstandingFine"], items)
+    columns = ["readerId", "fullName", "email", "phone", "overdueLoans", "outstandingFine"]
+    return respond(request, report, columns, items)
 
 
 @router.get("/reports/library-load")

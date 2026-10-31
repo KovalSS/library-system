@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from library import audit
 from library.db import Account, to_db
-from library.deps import ADMIN_ROLES, get_clock, get_hasher, get_session, require
+from library.deps import ADMIN_ROLES, get_clock, get_hasher, get_or_404, get_session, require
 from library.errors import ApiError, not_found
 from library.schemas import AccountInput, AccountUpdate, account_out
 
@@ -88,7 +88,5 @@ def create_librarian(body: AccountInput, session: Session = Depends(get_session)
 @router.patch("/librarians/{librarian_id}")
 def update_librarian(librarian_id: str, body: AccountUpdate, session: Session = Depends(get_session),
                      clock=Depends(get_clock), actor: Account = Depends(require(*ADMIN_ROLES))):
-    account = session.get(Account, librarian_id)
-    if account is None or account.role != "librarian":
-        raise not_found()
+    account = get_or_404(session, Account, librarian_id, lambda a: a.role == "librarian")
     return account_out(update_staff(session, clock, actor, account, body))

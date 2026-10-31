@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from library.circulation import expire_reservations
 from library.db import AccessToken, Account, to_db
-from library.errors import ApiError, forbidden
+from library.errors import ApiError, forbidden, not_found
 from library.security import hash_password
 
 ADMIN_ROLES = ("admin", "chief_admin")
@@ -30,6 +30,14 @@ def get_clock(request: Request):
 def get_hasher(request: Request):
     """Хешування пароля з кількістю повторів, заданою при створенні застосунку."""
     return partial(hash_password, iterations=request.app.state.password_iterations)
+
+
+def get_or_404(session: Session, model, object_id: str, matches=None):
+    """Ресурс за ідентифікатором або 404; `matches` уточнює, що це саме потрібний ресурс (напр. читач)."""
+    found = session.get(model, object_id)
+    if found is None or (matches is not None and not matches(found)):
+        raise not_found()
+    return found
 
 
 def today(clock) -> date:

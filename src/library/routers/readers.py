@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from library import audit
 from library.db import Account, EmailToken, to_db
-from library.deps import STAFF_ROLES, current_account, get_clock, get_hasher, get_session, require
-from library.errors import ApiError, forbidden, not_found
+from library.deps import STAFF_ROLES, current_account, get_clock, get_hasher, get_or_404, get_session, require
+from library.errors import ApiError, forbidden
 from library.routers.accounts import duplicate_email, email_taken
 from library.schemas import ReaderRegistration, TokenBody, page_out, reader_out
 from library.security import new_token
@@ -78,10 +78,7 @@ def readable_reader(session: Session, viewer: Account, reader_id: str) -> Accoun
     """Читач бачить лише себе (про чужі акаунти навіть не дізнається, чи вони існують)."""
     if viewer.role == "reader" and viewer.id != reader_id:
         raise forbidden()
-    reader = session.get(Account, reader_id)
-    if reader is None or reader.role != "reader":
-        raise not_found()
-    return reader
+    return get_or_404(session, Account, reader_id, lambda a: a.role == "reader")
 
 
 @router.get("/readers/{reader_id}")

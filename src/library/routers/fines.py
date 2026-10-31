@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from library import audit
 from library.circulation import fine_state, outstanding
 from library.db import Account, Edition, FinePayment, Loan, to_db
-from library.deps import current_account, get_clock, get_session, require, today
-from library.errors import ApiError, not_found
+from library.deps import current_account, get_clock, get_or_404, get_session, require, today
+from library.errors import ApiError
 from library.logging_setup import LOGGER_NAME
 from library.routers.readers import readable_reader
 from library.schemas import FinePaymentCreate, iso, money
@@ -42,9 +42,7 @@ def get_reader_fines(reader_id: str, session: Session = Depends(get_session), cl
 @router.post("/readers/{reader_id}/fine-payments", status_code=201)
 def pay_reader_fines(reader_id: str, body: FinePaymentCreate, session: Session = Depends(get_session),
                      clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
-    reader = session.get(Account, reader_id)
-    if reader is None or reader.role != "reader":
-        raise not_found()
+    get_or_404(session, Account, reader_id, lambda a: a.role == "reader")
     on = today(clock)
     loans = [loan for loan in loans_with_fines(session, reader_id, on) if outstanding(loan, on) > 0]
     if not loans:

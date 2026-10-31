@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 from library import audit
 from library.circulation import available_count
 from library.db import Account, Copy, Edition, Genre, Loan
-from library.deps import ADMIN_ROLES, STAFF_ROLES, current_account, get_clock, get_session, require
-from library.errors import ApiError, not_found, validation_failed
+from library.deps import ADMIN_ROLES, STAFF_ROLES, current_account, get_clock, get_or_404, get_session, require
+from library.errors import ApiError, validation_failed
 from library.schemas import (CopyInput, CopyUpdate, EditionInput, EditionUpdate, GenreInput, copy_out,
                              edition_out, genre_out, page_out)
 
@@ -27,7 +27,8 @@ def list_genres(session: Session = Depends(get_session), _: Account = Depends(cu
 
 
 @router.post("/genres", status_code=201)
-def create_genre(body: GenreInput, session: Session = Depends(get_session), clock=Depends(get_clock), actor: Account = Depends(require(*ADMIN_ROLES))):
+def create_genre(body: GenreInput, session: Session = Depends(get_session), clock=Depends(get_clock),
+                 actor: Account = Depends(require(*ADMIN_ROLES))):
     genre = Genre(name=body.name)
     session.add(genre)
     session.commit()
@@ -38,9 +39,7 @@ def create_genre(body: GenreInput, session: Session = Depends(get_session), cloc
 @router.patch("/genres/{genre_id}")
 def update_genre(genre_id: str, body: GenreInput, session: Session = Depends(get_session),
                  clock=Depends(get_clock), actor: Account = Depends(require(*ADMIN_ROLES))):
-    genre = session.get(Genre, genre_id)
-    if genre is None:
-        raise not_found()
+    genre = get_or_404(session, Genre, genre_id)
     genre.name = body.name
     session.commit()
     audit.record(session, clock, actor, "genre.updated", "genre", genre.id)
@@ -67,13 +66,6 @@ def ensure_isbn_free(session: Session, isbn: str, except_id: str | None = None) 
     other = session.scalar(select(Edition).where(Edition.isbn == isbn))
     if other is not None and other.id != except_id:
         raise ApiError(409, "duplicate_isbn", "Видання з таким ISBN уже є в каталозі.")
-
-
-def get_edition_or_404(session: Session, edition_id: str) -> Edition:
-    edition = session.get(Edition, edition_id)
-    if edition is None:
-        raise not_found()
-    return edition
 
 
 # --- REQ-F-043...046: пошук і фільтрація, доступні всім ролям
@@ -112,7 +104,8 @@ def search_editions(author: str | None = Query(default=None, min_length=1, max_l
 
 
 @router.post("/editions", status_code=201)
-def create_edition(body: EditionInput, session: Session = Depends(get_session), clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
+def create_edition(body: EditionInput, session: Session = Depends(get_session), clock=Depends(get_clock),
+                   actor: Account = Depends(require("librarian"))):
     existing_genre(session, body.genreId)
     ensure_isbn_free(session, body.isbn)
     edition = Edition(author=body.author, title=body.title, year=body.year, isbn=body.isbn,
@@ -125,13 +118,13 @@ def create_edition(body: EditionInput, session: Session = Depends(get_session), 
 
 @router.get("/editions/{edition_id}")
 def get_edition(edition_id: str, session: Session = Depends(get_session), _: Account = Depends(current_account)):
-    return present_edition(session, get_edition_or_404(session, edition_id))
+    return present_edition(session, get_or_404(session, Edition, edition_id))
 
 
 @router.patch("/editions/{edition_id}")
 def update_edition(edition_id: str, body: EditionUpdate, session: Session = Depends(get_session),
                    clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
-    edition = get_edition_or_404(session, edition_id)
+    edition = get_or_404(session, Edition, edition_id)
     if body.genreId is not None:
         existing_genre(session, body.genreId)
         edition.genre_id = body.genreId
@@ -151,7 +144,7 @@ def update_edition(edition_id: str, body: EditionUpdate, session: Session = Depe
 # --- REQ-F-004...007: екземпляри
 @router.get("/editions/{edition_id}/copies")
 def list_copies(edition_id: str, session: Session = Depends(get_session), _=Depends(require(*STAFF_ROLES))):
-    get_edition_or_404(session, edition_id)
+    get_or_404(session, Edition, edition_id)
     copies = session.scalars(select(Copy).where(Copy.edition_id == edition_id).order_by(Copy.inventory_number))
     return [copy_out(c) for c in copies]
 
@@ -159,7 +152,7 @@ def list_copies(edition_id: str, session: Session = Depends(get_session), _=Depe
 @router.post("/editions/{edition_id}/copies", status_code=201)
 def create_copy(edition_id: str, body: CopyInput, session: Session = Depends(get_session),
                 clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
-    get_edition_or_404(session, edition_id)
+    get_or_404(session, Edition, edition_id)
     if session.scalar(select(Copy).where(Copy.inventory_number == body.inventoryNumber)) is not None:
         raise ApiError(409, "duplicate_inventory_number", "Екземпляр із таким інвентарним номером уже існує.")
     copy = Copy(edition_id=edition_id, inventory_number=body.inventoryNumber, location=body.location,
@@ -170,13 +163,6 @@ def create_copy(edition_id: str, body: CopyInput, session: Session = Depends(get
     return copy_out(copy)
 
 
-def get_copy_or_404(session: Session, copy_id: str) -> Copy:
-    copy = session.get(Copy, copy_id)
-    if copy is None:
-        raise not_found()
-    return copy
-
-
 def copy_state_conflict() -> ApiError:
     return ApiError(409, "copy_state_conflict", "Екземпляр виданий або списаний, зміна неможлива.")
 
@@ -184,7 +170,7 @@ def copy_state_conflict() -> ApiError:
 @router.patch("/copies/{copy_id}")
 def update_copy(copy_id: str, body: CopyUpdate, session: Session = Depends(get_session),
                 clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
-    copy = get_copy_or_404(session, copy_id)
+    copy = get_or_404(session, Copy, copy_id)
     if body.status is not None:
         if copy.status in SYSTEM_MANAGED_STATES:
             raise copy_state_conflict()
@@ -197,8 +183,9 @@ def update_copy(copy_id: str, body: CopyUpdate, session: Session = Depends(get_s
 
 
 @router.post("/copies/{copy_id}/write-off")
-def write_off_copy(copy_id: str, session: Session = Depends(get_session), clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
-    copy = get_copy_or_404(session, copy_id)
+def write_off_copy(copy_id: str, session: Session = Depends(get_session), clock=Depends(get_clock),
+                   actor: Account = Depends(require("librarian"))):
+    copy = get_or_404(session, Copy, copy_id)
     if copy.status in SYSTEM_MANAGED_STATES:
         raise copy_state_conflict()
     copy.status = "written_off"

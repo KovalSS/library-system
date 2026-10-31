@@ -53,8 +53,8 @@ def install_error_handlers(app: FastAPI) -> None:
     async def http_error(_: Request, exc: StarletteHTTPException):
         if exc.status_code == 404:
             return error_response(404, "not_found", "Ресурс не знайдено.")
-        return JSONResponse(status_code=exc.status_code, content={"message": exc.detail, "requestId": request_id_var.get()},
-                            headers=getattr(exc, "headers", None))
+        body = {"message": exc.detail, "requestId": request_id_var.get()}
+        return JSONResponse(status_code=exc.status_code, content=body, headers=getattr(exc, "headers", None))
 
 
 def _field_name(loc) -> str:

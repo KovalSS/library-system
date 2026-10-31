@@ -6,8 +6,7 @@ from sqlalchemy.orm import Session
 from library import audit
 from library.circulation import PICKUP_PERIOD, free_copy, queue_position
 from library.db import Account, Edition, Reservation, to_db
-from library.deps import current_account, get_clock, get_session, require
-from library.errors import not_found
+from library.deps import current_account, get_clock, get_or_404, get_session, require
 from library.notifications import notify_reservation_ready
 from library.routers.readers import readable_reader
 from library.schemas import ReservationCreate, ReservationStatus, iso, page_out
@@ -25,9 +24,7 @@ def reservation_out(session: Session, reservation: Reservation) -> dict:
 @router.post("/reservations", status_code=201)
 def create_reservation(body: ReservationCreate, session: Session = Depends(get_session), clock=Depends(get_clock),
                        reader: Account = Depends(require("reader"))):
-    edition = session.get(Edition, str(body.editionId))
-    if edition is None:
-        raise not_found()
+    edition = get_or_404(session, Edition, str(body.editionId))
     now = to_db(clock.now())
     reservation = Reservation(reader_id=reader.id, edition_id=edition.id, created_at=now, status="queued")
     copy = free_copy(session, edition.id)

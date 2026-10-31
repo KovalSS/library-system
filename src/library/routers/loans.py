@@ -10,8 +10,8 @@ from library import audit
 from library.circulation import (RATE_WITH_QUEUE, RATE_WITHOUT_QUEUE, TERM_WITH_QUEUE, TERM_WITHOUT_QUEUE,
                                  fine_state, has_queue, holding_reservation, loan_status, offer_copy)
 from library.db import Account, Copy, Edition, Loan, to_db
-from library.deps import current_account, get_clock, get_session, require, today
-from library.errors import ApiError, forbidden, not_found
+from library.deps import current_account, get_clock, get_or_404, get_session, require, today
+from library.errors import ApiError, forbidden
 from library.logging_setup import LOGGER_NAME
 from library.routers.readers import readable_reader
 from library.schemas import LoanCreate, LoanStatus, money, page_out
@@ -38,10 +38,8 @@ def copy_not_available(copy_id: str, reason: str) -> ApiError:
 @router.post("/loans", status_code=201)
 def create_loan(body: LoanCreate, session: Session = Depends(get_session), clock=Depends(get_clock),
                 actor: Account = Depends(require("librarian"))):
-    reader = session.get(Account, str(body.readerId))
-    copy = session.get(Copy, str(body.copyId))
-    if reader is None or reader.role != "reader" or copy is None:
-        raise not_found()
+    reader = get_or_404(session, Account, str(body.readerId), lambda a: a.role == "reader")
+    copy = get_or_404(session, Copy, str(body.copyId))
     if copy.status != "available":
         raise copy_not_available(copy.id, f"стан {copy.status}")
     reservation = holding_reservation(session, copy.id)
@@ -64,17 +62,10 @@ def create_loan(body: LoanCreate, session: Session = Depends(get_session), clock
     return loan_out(loan, issued_on)
 
 
-def get_loan_or_404(session: Session, loan_id: str) -> Loan:
-    loan = session.get(Loan, loan_id)
-    if loan is None:
-        raise not_found()
-    return loan
-
-
 @router.get("/loans/{loan_id}")
 def get_loan(loan_id: str, session: Session = Depends(get_session), clock=Depends(get_clock),
              viewer: Account = Depends(current_account)):
-    loan = get_loan_or_404(session, loan_id)
+    loan = get_or_404(session, Loan, loan_id)
     if viewer.role == "reader" and loan.reader_id != viewer.id:
         raise forbidden()
     return loan_out(loan, today(clock))
@@ -83,7 +74,7 @@ def get_loan(loan_id: str, session: Session = Depends(get_session), clock=Depend
 @router.post("/loans/{loan_id}/return")
 def return_loan(loan_id: str, session: Session = Depends(get_session), clock=Depends(get_clock),
                 actor: Account = Depends(require("librarian"))):
-    loan = get_loan_or_404(session, loan_id)
+    loan = get_or_404(session, Loan, loan_id)
     on = today(clock)
     if loan_status(loan, on) != "active":
         loans_log.warning("Відмова у поверненні видачі %s: стан %s", loan.id, loan_status(loan, on))
