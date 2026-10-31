@@ -147,8 +147,13 @@ def make_session_factory(database_url: str):
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     @event.listens_for(engine, "connect")
-    def enable_foreign_keys(connection, _):
+    def configure_sqlite(connection, _):
         connection.execute("PRAGMA foreign_keys=ON")
+        # WAL: читання не блокує запис, збереження не чекає повного запису на диск після кожної транзакції.
+        # База лишається цілісною при збої; раптове вимкнення живлення може втратити останні секунди записів
+        # (прийнятно: щодобове резервне копіювання, SLA не встановлюється — REQ-NF-002).
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=NORMAL")
 
     Base.metadata.create_all(engine)
     return sessionmaker(engine, expire_on_commit=False)
