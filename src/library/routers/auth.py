@@ -30,11 +30,16 @@ def find_login_account(session: Session, email: str) -> Account | None:
 
 
 def invalid_credentials() -> ApiError:
+    """Створює помилку 401 Unauthorized при невірних облікових даних."""
     return ApiError(401, "invalid_credentials", "Невірний email або пароль.")
 
 
 @router.post("/auth/login")
 def login(body: LoginRequest, session: Session = Depends(get_session), clock=Depends(get_clock)):
+    """Автентифікація користувача за паролем із видачею токена доступу (REQ-F-047, REQ-F-048).
+
+    Блокує обліковий запис на 15 хвилин після 5 поспіль невдалих спроб входу (REQ-F-048).
+    """
     now = to_db(clock.now())
     account = find_login_account(session, body.email)
     if account is None:
@@ -72,6 +77,7 @@ def login(body: LoginRequest, session: Session = Depends(get_session), clock=Dep
 
 @router.post("/auth/password-reset-requests", status_code=202)
 def request_password_reset(body: PasswordResetRequest, request: Request, session: Session = Depends(get_session)):
+    """Ініціює процедуру відновлення пароля через лист із одноразовим токеном (REQ-F-047)."""
     # Відповідь однакова незалежно від того, чи існує акаунт (адендум A5).
     account = find_login_account(session, body.email)
     if account is not None:
@@ -82,6 +88,7 @@ def request_password_reset(body: PasswordResetRequest, request: Request, session
 @router.post("/auth/password-resets", status_code=204)
 def reset_password(body: PasswordReset, session: Session = Depends(get_session), clock=Depends(get_clock),
                    hasher=Depends(get_hasher)):
+    """Встановлює новий пароль за дійсним одноразовим токеном відновлення (REQ-F-047)."""
     account = use_email_token(session, body.token, "password_reset")
     account.password_hash = hasher(body.newPassword)
     audit.record(session, clock, account, "account.password_reset", account.role, account)

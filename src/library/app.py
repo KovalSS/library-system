@@ -32,6 +32,7 @@ http_log = logging.getLogger(f"{LOGGER_NAME}.http")
 
 
 def default_chief_admin() -> ChiefAdmin:
+    """Отримує облікові дані головного адміністратора за замовчуванням або зі змінних середовища."""
     # Значення для локальної розробки; у розгортанні задаються змінними середовища.
     return ChiefAdmin(
         email=os.environ.get("LIBRARY_CHIEF_EMAIL", "chief@library.local"),
@@ -66,6 +67,7 @@ def create_app(
     password_iterations: int = DEFAULT_ITERATIONS,
     backup_dir: Path = DEFAULT_BACKUP_DIR,
 ) -> FastAPI:
+    """Фабрика створення екземпляра застосунку FastAPI з повною конфігурацією інфраструктури."""
     configure_logging(log_file)
     app = FastAPI(title="Library System API", version="1.0.0")
     app.state.database_url = database_url

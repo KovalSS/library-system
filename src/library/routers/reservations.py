@@ -15,6 +15,7 @@ router = APIRouter()
 
 
 def reservation_out(session: Session, reservation: Reservation) -> dict:
+    """Формує вихідний словник представлення бронювання з позицією в черзі."""
     return {"id": reservation.id, "readerId": reservation.reader_id, "editionId": reservation.edition_id,
             "status": reservation.status, "queuePosition": queue_position(session, reservation),
             "pickupDeadline": iso(reservation.pickup_deadline) if reservation.pickup_deadline else None,
@@ -24,6 +25,11 @@ def reservation_out(session: Session, reservation: Reservation) -> dict:
 @router.post("/reservations", status_code=201)
 def create_reservation(body: ReservationCreate, session: Session = Depends(get_session), clock=Depends(get_clock),
                        reader: Account = Depends(require("reader"))):
+    """Створює бронювання видання або ставить читача в чергу (REQ-F-023, REQ-F-024).
+
+    Якщо є вільний екземпляр, бронювання переходить у статус 'ready' на 2 доби;
+    якщо всі примірники зайняті — стає в чергу зі статусом 'queued'.
+    """
     edition = get_or_404(session, Edition, str(body.editionId))
     now = to_db(clock.now())
     reservation = Reservation(reader_id=reader.id, edition_id=edition.id, created_at=now, status="queued")
@@ -45,6 +51,7 @@ def create_reservation(body: ReservationCreate, session: Session = Depends(get_s
 def list_reader_reservations(reader_id: str, status: ReservationStatus | None = None,
                              page: int = Query(default=1, ge=1), pageSize: int = Query(default=20, ge=1, le=100),
                              session: Session = Depends(get_session), viewer: Account = Depends(current_account)):
+    """Повертає пагінований список бронювань читача з можливістю фільтрації за статусом."""
     readable_reader(session, viewer, reader_id)
     query = select(Reservation).where(Reservation.reader_id == reader_id)
     if status:

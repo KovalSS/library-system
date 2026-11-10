@@ -23,12 +23,14 @@ SYSTEM_MANAGED_STATES = ("issued", "written_off")
 # --- REQ-F-003: довідник жанрів
 @router.get("/genres")
 def list_genres(session: Session = Depends(get_session), _: Account = Depends(current_account)):
+    """Повертає повний список жанрів із довідника (REQ-F-003)."""
     return [genre_out(g) for g in session.scalars(select(Genre).order_by(Genre.name))]
 
 
 @router.post("/genres", status_code=201)
 def create_genre(body: GenreInput, session: Session = Depends(get_session), clock=Depends(get_clock),
                  actor: Account = Depends(require(*ADMIN_ROLES))):
+    """Створює новий літературний жанр у довіднику адміністратором (REQ-F-007)."""
     genre = Genre(name=body.name)
     session.add(genre)
     audit.record(session, clock, actor, "genre.created", "genre", genre)
@@ -39,6 +41,7 @@ def create_genre(body: GenreInput, session: Session = Depends(get_session), cloc
 @router.patch("/genres/{genre_id}")
 def update_genre(genre_id: str, body: GenreInput, session: Session = Depends(get_session),
                  clock=Depends(get_clock), actor: Account = Depends(require(*ADMIN_ROLES))):
+    """Оновлює назву наявного жанру адміністратором (REQ-F-008)."""
     genre = get_or_404(session, Genre, genre_id)
     genre.name = body.name
     audit.record(session, clock, actor, "genre.updated", "genre", genre)
@@ -48,12 +51,14 @@ def update_genre(genre_id: str, body: GenreInput, session: Session = Depends(get
 
 # --- REQ-F-001, 002, 008: видання
 def existing_genre(session: Session, genre_id: str) -> None:
+    """Перевіряє наявність жанру в довіднику (400 validation_failed, якщо не знайдено)."""
     # Контракт не має 404 для createEdition: невідомий жанр — помилка вхідних даних.
     if session.get(Genre, genre_id) is None:
         raise validation_failed("genreId", "Жанр не знайдено в довіднику.")
 
 
 def ensure_isbn_free(session: Session, isbn: str, except_id: str | None = None) -> None:
+    """Перевіряє унікальність ISBN серед усіх видань каталогу (REQ-F-001)."""
     other = session.scalar(select(Edition).where(Edition.isbn == isbn))
     if other is not None and other.id != except_id:
         raise ApiError(409, "duplicate_isbn", "Видання з таким ISBN уже є в каталозі.")
@@ -77,6 +82,7 @@ def search_editions(author: str | None = Query(default=None, min_length=1, max_l
                     order: Literal["asc", "desc"] = "asc",
                     page: int = Query(default=1, ge=1), pageSize: int = Query(default=20, ge=1, le=100),
                     session: Session = Depends(get_session), _: Account = Depends(current_account)):
+    """Пошук і фільтрація видань у каталозі з пагінацією та сортуванням (REQ-F-043...046)."""
     # Усі задані фільтри застосовуються одночасно — перетин умов (REQ-F-043).
     query = select(Edition)
     if author:
@@ -97,6 +103,7 @@ def search_editions(author: str | None = Query(default=None, min_length=1, max_l
 @router.post("/editions", status_code=201)
 def create_edition(body: EditionInput, session: Session = Depends(get_session), clock=Depends(get_clock),
                    actor: Account = Depends(require("librarian"))):
+    """Додає нове бібліографічне видання до каталогу бібліотекарем (REQ-F-001)."""
     existing_genre(session, body.genreId)
     ensure_isbn_free(session, body.isbn)
     edition = Edition(author=body.author, title=body.title, year=body.year, isbn=body.isbn,
@@ -109,12 +116,14 @@ def create_edition(body: EditionInput, session: Session = Depends(get_session), 
 
 @router.get("/editions/{edition_id}")
 def get_edition(edition_id: str, session: Session = Depends(get_session), _: Account = Depends(current_account)):
+    """Повертає детальну інформацію про видання за ідентифікатором (REQ-F-003)."""
     return present_edition(session, get_or_404(session, Edition, edition_id))
 
 
 @router.patch("/editions/{edition_id}")
 def update_edition(edition_id: str, body: EditionUpdate, session: Session = Depends(get_session),
                    clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
+    """Оновлює поля видання в каталозі бібліотекарем (REQ-F-002)."""
     edition = get_or_404(session, Edition, edition_id)
     if body.genreId is not None:
         existing_genre(session, body.genreId)
@@ -135,6 +144,7 @@ def update_edition(edition_id: str, body: EditionUpdate, session: Session = Depe
 # --- REQ-F-004...007: екземпляри
 @router.get("/editions/{edition_id}/copies")
 def list_copies(edition_id: str, session: Session = Depends(get_session), _=Depends(require(*STAFF_ROLES))):
+    """Отримує повний список фізичних екземплярів видання для персоналу (REQ-F-004)."""
     get_or_404(session, Edition, edition_id)
     copies = session.scalars(select(Copy).where(Copy.edition_id == edition_id).order_by(Copy.inventory_number))
     return [copy_out(c) for c in copies]
@@ -143,6 +153,7 @@ def list_copies(edition_id: str, session: Session = Depends(get_session), _=Depe
 @router.post("/editions/{edition_id}/copies", status_code=201)
 def create_copy(edition_id: str, body: CopyInput, session: Session = Depends(get_session),
                 clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
+    """Створює новий фізичний екземпляр видання з унікальним інвентарним номером (REQ-F-004)."""
     get_or_404(session, Edition, edition_id)
     if session.scalar(select(Copy).where(Copy.inventory_number == body.inventoryNumber)) is not None:
         raise ApiError(409, "duplicate_inventory_number", "Екземпляр із таким інвентарним номером уже існує.")
@@ -155,12 +166,14 @@ def create_copy(edition_id: str, body: CopyInput, session: Session = Depends(get
 
 
 def copy_state_conflict() -> ApiError:
+    """Створює помилку 409 Conflict при спробі редагування виданого або списаного екземпляра."""
     return ApiError(409, "copy_state_conflict", "Екземпляр виданий або списаний, зміна неможлива.")
 
 
 @router.patch("/copies/{copy_id}")
 def update_copy(copy_id: str, body: CopyUpdate, session: Session = Depends(get_session),
                 clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
+    """Змінює статус або розташування екземпляра бібліотекарем (REQ-F-005)."""
     copy = get_or_404(session, Copy, copy_id)
     if body.status is not None:
         if copy.status in SYSTEM_MANAGED_STATES:
@@ -176,6 +189,7 @@ def update_copy(copy_id: str, body: CopyUpdate, session: Session = Depends(get_s
 @router.post("/copies/{copy_id}/write-off")
 def write_off_copy(copy_id: str, session: Session = Depends(get_session), clock=Depends(get_clock),
                    actor: Account = Depends(require("librarian"))):
+    """Списує фізичний екземпляр з фонду бібліотеки (REQ-F-006)."""
     copy = get_or_404(session, Copy, copy_id)
     if copy.status in SYSTEM_MANAGED_STATES:
         raise copy_state_conflict()

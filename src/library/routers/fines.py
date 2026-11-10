@@ -20,6 +20,7 @@ fines_log = logging.getLogger(f"{LOGGER_NAME}.fines")
 
 
 def loans_with_fines(session: Session, reader_id: str, on) -> list[Loan]:
+    """Повертає список видач читача, за якими є нарахований штраф."""
     loans = session.scalars(select(Loan).where(Loan.reader_id == reader_id).order_by(Loan.issued_on))
     return [loan for loan in loans if fine_state(loan, on).amount > 0]
 
@@ -27,6 +28,7 @@ def loans_with_fines(session: Session, reader_id: str, on) -> list[Loan]:
 @router.get("/readers/{reader_id}/fines")
 def get_reader_fines(reader_id: str, session: Session = Depends(get_session), clock=Depends(get_clock),
                      viewer: Account = Depends(current_account)):
+    """Отримує детальну інформацію про всі штрафи читача та загальну суму боргу (REQ-F-030)."""
     readable_reader(session, viewer, reader_id)
     on = today(clock)
     items = []
@@ -42,6 +44,7 @@ def get_reader_fines(reader_id: str, session: Session = Depends(get_session), cl
 @router.post("/readers/{reader_id}/fine-payments", status_code=201)
 def pay_reader_fines(reader_id: str, body: FinePaymentCreate, session: Session = Depends(get_session),
                      clock=Depends(get_clock), actor: Account = Depends(require("librarian"))):
+    """Реєструє повну оплату заборгованості читача зі штрафів бібліотекарем (REQ-F-030, REQ-F-031)."""
     get_or_404(session, Account, reader_id, lambda a: a.role == "reader")
     on = today(clock)
     loans = [loan for loan in loans_with_fines(session, reader_id, on) if outstanding(loan, on) > 0]

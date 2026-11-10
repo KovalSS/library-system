@@ -29,6 +29,11 @@ def recommendation_reason(edition: Edition, authors: set[str], genres: set[str])
 @router.get("/readers/{reader_id}/recommendations")
 def list_recommendations(reader_id: str, session: Session = Depends(get_session),
                          viewer: Account = Depends(current_account)):
+    """Формує персональні рекомендації читачу на основі його попередніх видач (REQ-F-032...034, REQ-F-052).
+
+    Рекомендуються наявні у фонді видання тих самих авторів чи жанрів, виключаючи
+    вже раніше отримані читачем книги (REQ-F-052).
+    """
     readable_reader(session, viewer, reader_id)
     read_ids = set(session.scalars(select(Loan.edition_id).where(Loan.reader_id == reader_id)))
     read = [session.get(Edition, edition_id) for edition_id in read_ids]

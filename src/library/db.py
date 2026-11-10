@@ -9,17 +9,29 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 
 def new_id() -> str:
+    """Генерує новий унікальний UUID v4 у вигляді рядка."""
     return str(uuid.uuid4())
 
 
 def to_db(moment: datetime) -> datetime:
-    """SQLite зберігає час без поясу: усі моменти зберігаються як UTC."""
+    """Нормалізує часову мітку до UTC без інформації про пояс (naive UTC).
+
+    SQLite зберігає дату/час без таймзони, тому всі моменти приводяться до UTC
+    і позбавляються tzinfo перед збереженням.
+
+    Args:
+        moment: Вихідний об'єкт datetime (з таймзоною або без).
+
+    Returns:
+        datetime в UTC без tzinfo.
+    """
     if moment.tzinfo is None:
         return moment
     return moment.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):
+    """Базовий декларативний клас SQLAlchemy для всіх таблиць моделі."""
     pass
 
 
@@ -42,6 +54,7 @@ class Account(Base):
 
 
 class AccessToken(Base):
+    """Токен сесії користувача для автентифікації за схемою Bearer (REQ-F-047)."""
     __tablename__ = "access_tokens"
 
     token: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -49,7 +62,7 @@ class AccessToken(Base):
 
 
 class EmailToken(Base):
-    """Одноразові токени з листів: підтвердження email і скидання пароля."""
+    """Одноразові токени з листів: підтвердження email і скидання пароля (REQ-F-016, REQ-F-048)."""
     __tablename__ = "email_tokens"
 
     token: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -59,6 +72,7 @@ class EmailToken(Base):
 
 
 class Genre(Base):
+    """Довідник літературних жанрів для класифікації видань (REQ-F-007, 008)."""
     __tablename__ = "genres"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -66,6 +80,7 @@ class Genre(Base):
 
 
 class Edition(Base):
+    """Бібліографічний запис видання в каталозі (REQ-F-001...003)."""
     __tablename__ = "editions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -79,6 +94,7 @@ class Edition(Base):
 
 
 class Copy(Base):
+    """Фізичний екземпляр видання з інвентарним номером і станом (REQ-F-004...006)."""
     __tablename__ = "copies"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -121,6 +137,7 @@ class Reservation(Base):
 
 
 class FinePayment(Base):
+    """Факт сплати нарахованого штрафу читачем через бібліотекаря (REQ-F-030, 031)."""
     __tablename__ = "fine_payments"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -159,6 +176,18 @@ class AuditEntry(Base):
 
 
 def make_session_factory(database_url: str):
+    """Створює фабрику сесій SQLAlchemy з оптимізованими налаштуваннями SQLite.
+
+    Вмикає перевірку зовнішніх ключів (PRAGMA foreign_keys=ON), режим WAL
+    (PRAGMA journal_mode=WAL) та реєструє детерміновану функцію `casefold`
+    для підтримки нечутливого до регістру пошуку кирилицею.
+
+    Args:
+        database_url: Рядок підключення до БД (наприклад, 'sqlite:///var/library.db').
+
+    Returns:
+        Об'єкт sessionmaker для створення сесій бази даних.
+    """
     engine = create_engine(database_url, connect_args={"check_same_thread": False})
 
     @event.listens_for(engine, "connect")

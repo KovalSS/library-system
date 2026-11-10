@@ -15,6 +15,7 @@ STAFF_ROLES = ("librarian", "admin", "chief_admin")
 
 
 def get_session(request: Request):
+    """Генератор сесії бази даних із автоматичним виконанням регламентних дій за часом."""
     with request.app.state.sessions() as session:
         # Дії за часом (автоскасування броні, щодобова копія) виконуються при зверненні, без фонового завдання.
         now = to_db(request.app.state.clock.now())
@@ -24,6 +25,7 @@ def get_session(request: Request):
 
 
 def get_clock(request: Request):
+    """Повертає інжектоване джерело часу (Clock) із стану застосунку."""
     return request.app.state.clock
 
 
@@ -41,10 +43,12 @@ def get_or_404(session: Session, model, object_id: str, matches=None):
 
 
 def today(clock) -> date:
+    """Повертає поточну календарну дату в UTC з переданого годинника."""
     return to_db(clock.now()).date()
 
 
 def current_account(request: Request, session: Session = Depends(get_session)) -> Account:
+    """Автентифікує користувача за токеном Bearer із заголовка Authorization (REQ-F-047)."""
     header = request.headers.get("Authorization", "")
     scheme, _, token = header.partition(" ")
     if scheme != "Bearer" or not token:
@@ -58,6 +62,7 @@ def current_account(request: Request, session: Session = Depends(get_session)) -
 
 
 def require(*roles: str):
+    """Фабрика залежностей FastAPI для перевірки наявності дозволеної ролі в користувача."""
     def check(account: Account = Depends(current_account)) -> Account:
         if account.role not in roles:
             raise forbidden()

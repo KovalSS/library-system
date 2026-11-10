@@ -18,6 +18,7 @@ def list_audit_log_entries(actorId: str | None = None,
                            to: datetime | None = None,
                            page: int = Query(default=1, ge=1), pageSize: int = Query(default=20, ge=1, le=100),
                            session: Session = Depends(get_session), _=Depends(require(*ADMIN_ROLES))):
+    """Повертає пагіновані записи аудит-логу дій користувачів для адміністратора (REQ-F-049)."""
     query = select(AuditEntry)
     if actorId:
         query = query.where(AuditEntry.actor_id == actorId)

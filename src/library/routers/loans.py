@@ -20,6 +20,7 @@ loans_log = logging.getLogger(f"{LOGGER_NAME}.loans")
 
 
 def loan_out(loan: Loan, on: date) -> dict:
+    """Формує словник картки видачі з динамічно розрахованим штрафом та статусом."""
     fine = fine_state(loan, on)
     return {"id": loan.id, "readerId": loan.reader_id, "copyId": loan.copy_id, "editionId": loan.edition_id,
             "issuedAt": loan.issued_on.isoformat(), "dueDate": loan.due_on.isoformat(), "termDays": loan.term_days,
@@ -31,6 +32,10 @@ def loan_out(loan: Loan, on: date) -> dict:
 @router.post("/loans", status_code=201)
 def create_loan(body: LoanCreate, session: Session = Depends(get_session), clock=Depends(get_clock),
                 actor: Account = Depends(require("librarian"))):
+    """Оформлює видачу екземпляра читачу бібліотекарем (REQ-F-018, REQ-F-051).
+
+    Перевіряє доступність книги та відсутність заборгованості в читача.
+    """
     reader = get_or_404(session, Account, str(body.readerId), lambda a: a.role == "reader")
     copy = get_or_404(session, Copy, str(body.copyId))
     on = today(clock)                       # одна дата на весь запит: і для перевірки боргу, і для видачі
@@ -54,6 +59,7 @@ def create_loan(body: LoanCreate, session: Session = Depends(get_session), clock
 @router.get("/loans/{loan_id}")
 def get_loan(loan_id: str, session: Session = Depends(get_session), clock=Depends(get_clock),
              viewer: Account = Depends(current_account)):
+    """Повертає детальну картку видачі за її ідентифікатором (REQ-F-020)."""
     loan = get_or_404(session, Loan, loan_id)
     if viewer.role == "reader" and loan.reader_id != viewer.id:
         raise forbidden()
@@ -63,6 +69,7 @@ def get_loan(loan_id: str, session: Session = Depends(get_session), clock=Depend
 @router.post("/loans/{loan_id}/return")
 def return_loan(loan_id: str, session: Session = Depends(get_session), clock=Depends(get_clock),
                 actor: Account = Depends(require("librarian"))):
+    """Реєструє повернення книги, звільняє екземпляр або пропонує його черзі (REQ-F-021, REQ-F-026)."""
     loan = get_or_404(session, Loan, loan_id)
     on = today(clock)
     if loan_status(loan, on) != "active":
@@ -83,6 +90,7 @@ def list_reader_loans(reader_id: str, status: LoanStatus | None = None,
                       page: int = Query(default=1, ge=1), pageSize: int = Query(default=20, ge=1, le=100),
                       session: Session = Depends(get_session), clock=Depends(get_clock),
                       viewer: Account = Depends(current_account)):
+    """Повертає пагінований список видач читача з можливістю фільтрації за статусом (REQ-F-020)."""
     readable_reader(session, viewer, reader_id)
     on = today(clock)
     loans = [loan for loan in session.scalars(select(Loan).where(Loan.reader_id == reader_id)

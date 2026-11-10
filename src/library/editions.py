@@ -13,5 +13,6 @@ def loans_count(session: Session, edition_id: str) -> int:
 
 
 def present_edition(session: Session, edition: Edition) -> dict:
+    """Формує вихідний словник представлення видання відповідно до схеми `Edition` контракту."""
     return edition_out(edition, session.get(Genre, edition.genre_id), available_count(session, edition.id),
                        loans_count(session, edition.id))

@@ -26,6 +26,7 @@ def list_notifications(reader_id: str, page: int = Query(default=1, ge=1),
                        pageSize: int = Query(default=20, ge=1, le=100),
                        session: Session = Depends(get_session), clock=Depends(get_clock),
                        viewer: Account = Depends(current_account)):
+    """Отримує хронологічний список сповіщень читача з попередньою синхронізацією (REQ-F-035...038)."""
     readable_reader(session, viewer, reader_id)
     sync_loan_notifications(session, reader_id, today(clock))
     query = select(Notification).where(Notification.reader_id == reader_id)

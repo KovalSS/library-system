@@ -14,6 +14,7 @@ router = APIRouter()
 
 
 def create_staff(session: Session, clock, hasher, actor: Account, body: AccountInput, role: str) -> Account:
+    """Створює обліковий запис співробітника (адміністратора або бібліотекаря) із записом в аудит."""
     if email_taken(session, body.email):
         raise duplicate_email()
     account = Account(email=body.email, full_name=body.fullName, role=role,
@@ -25,6 +26,7 @@ def create_staff(session: Session, clock, hasher, actor: Account, body: AccountI
 
 
 def update_staff(session: Session, clock, actor: Account, account: Account, body: AccountUpdate) -> Account:
+    """Оновлює дані або статус активності акаунта персоналу із фіксацією в аудит-лозі."""
     if body.email is not None and body.email != account.email:
         if email_taken(session, body.email, except_id=account.id):
             raise duplicate_email()
@@ -42,18 +44,21 @@ def update_staff(session: Session, clock, actor: Account, account: Account, body
 # --- адміністратори нижчого рівня: лише головний адміністратор
 @router.get("/administrators")
 def list_administrators(session: Session = Depends(get_session), _=Depends(require("chief_admin"))):
+    """Отримує список облікових записів адміністраторів нижчого рівня (REQ-F-010)."""
     return [account_out(a) for a in session.scalars(select(Account).where(Account.role == "admin"))]
 
 
 @router.post("/administrators", status_code=201)
 def create_administrator(body: AccountInput, session: Session = Depends(get_session), clock=Depends(get_clock),
                          hasher=Depends(get_hasher), actor: Account = Depends(require("chief_admin"))):
+    """Створює новий обліковий запис адміністратора головним адміністратором (REQ-F-010)."""
     return account_out(create_staff(session, clock, hasher, actor, body, "admin"))
 
 
 @router.patch("/administrators/{administrator_id}")
 def update_administrator(administrator_id: str, body: AccountUpdate, session: Session = Depends(get_session),
                          clock=Depends(get_clock), actor: Account = Depends(require("chief_admin"))):
+    """Оновлює дані або деактивує обліковий запис адміністратора (REQ-F-011, REQ-F-012)."""
     account = session.get(Account, administrator_id)
     if account is not None and account.role == "chief_admin":
         raise ApiError(403, "protected_account", "Акаунт головного адміністратора змінювати заборонено.")
@@ -65,17 +70,20 @@ def update_administrator(administrator_id: str, body: AccountUpdate, session: Se
 # --- бібліотекарі: адміністратори
 @router.get("/librarians")
 def list_librarians(session: Session = Depends(get_session), _=Depends(require(*ADMIN_ROLES))):
+    """Отримує список облікових записів бібліотекарів (REQ-F-013)."""
     return [account_out(a) for a in session.scalars(select(Account).where(Account.role == "librarian"))]
 
 
 @router.post("/librarians", status_code=201)
 def create_librarian(body: AccountInput, session: Session = Depends(get_session), clock=Depends(get_clock),
                      hasher=Depends(get_hasher), actor: Account = Depends(require(*ADMIN_ROLES))):
+    """Створює новий обліковий запис бібліотекаря адміністратором (REQ-F-013)."""
     return account_out(create_staff(session, clock, hasher, actor, body, "librarian"))
 
 
 @router.patch("/librarians/{librarian_id}")
 def update_librarian(librarian_id: str, body: AccountUpdate, session: Session = Depends(get_session),
                      clock=Depends(get_clock), actor: Account = Depends(require(*ADMIN_ROLES))):
+    """Оновлює дані або деактивує обліковий запис бібліотекаря (REQ-F-014)."""
     account = get_or_404(session, Account, librarian_id, lambda a: a.role == "librarian")
     return account_out(update_staff(session, clock, actor, account, body))

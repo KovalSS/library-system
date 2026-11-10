@@ -16,6 +16,7 @@ router = APIRouter()
 @router.post("/readers", status_code=201)
 def register_reader(body: ReaderRegistration, request: Request, session: Session = Depends(get_session),
                     clock=Depends(get_clock), hasher=Depends(get_hasher)):
+    """Реєструє нового читача в системі та надсилає лист підтвердження пошти (REQ-F-015, REQ-F-016)."""
     if email_taken(session, body.email):
         raise duplicate_email()
     reader = Account(email=body.email, full_name=body.fullName, role="reader", active=False,
@@ -30,6 +31,7 @@ def register_reader(body: ReaderRegistration, request: Request, session: Session
 
 @router.post("/email-confirmations")
 def confirm_email(body: TokenBody, session: Session = Depends(get_session), clock=Depends(get_clock)):
+    """Підтверджує адресу електронної пошти читача за одноразовим токеном (REQ-F-016)."""
     reader = use_email_token(session, body.token, "email_confirmation")
     # Поки лист чекав, email міг підтвердити інший акаунт (REQ-F-017).
     if email_taken(session, reader.email, except_id=reader.id):
@@ -45,6 +47,7 @@ def confirm_email(body: TokenBody, session: Session = Depends(get_session), cloc
 def list_readers(q: str | None = Query(default=None, min_length=1, max_length=100),
                  page: int = Query(default=1, ge=1), pageSize: int = Query(default=20, ge=1, le=100),
                  session: Session = Depends(get_session), _=Depends(require(*STAFF_ROLES))):
+    """Повертає список зареєстрованих читачів для бібліотекаря з пошуком (REQ-F-050)."""
     query = select(Account).where(Account.role == "reader")
     if q:
         pattern = f"%{q.casefold()}%"
@@ -57,4 +60,5 @@ def list_readers(q: str | None = Query(default=None, min_length=1, max_length=10
 
 @router.get("/readers/{reader_id}")
 def get_reader(reader_id: str, session: Session = Depends(get_session), viewer: Account = Depends(current_account)):
+    """Отримує профіль читача для власника кабінету або персоналу бібліотеки (REQ-F-050)."""
     return reader_out(readable_reader(session, viewer, reader_id))

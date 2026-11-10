@@ -17,12 +17,14 @@ DUE_SOON_DAYS = 2                                     # REQ-F-035: за 1–2 д
 
 def notify(session: Session, key: str, reader_id: str, kind: str, message: str, created_at: datetime,
            loan_id: str | None = None, reservation_id: str | None = None) -> None:
+    """Ідемпотентно створює сповіщення для читача, якщо ключ ще не існує."""
     if session.scalar(select(Notification.seq).where(Notification.key == key)) is None:
         session.add(Notification(key=key, reader_id=reader_id, type=kind, message=message, created_at=created_at,
                                  loan_id=loan_id, reservation_id=reservation_id))
 
 
 def start_of(day: date) -> datetime:
+    """Перетворює календарну дату на початок доби (00:00:00)."""
     return datetime.combine(day, time())
 
 
@@ -36,6 +38,7 @@ def notify_reservation_ready(session: Session, reservation: Reservation) -> None
 
 
 def sync_loan_notifications(session: Session, reader_id: str, on: date) -> None:
+    """Генерує та оновлює сповіщення про наближення терміну та прострочення (REQ-F-035, REQ-F-037)."""
     for loan in session.scalars(select(Loan).where(Loan.reader_id == reader_id)):
         title = session.get(Edition, loan.edition_id).title
         last_day = min(on, loan.returned_on) if loan.returned_on else on

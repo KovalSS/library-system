@@ -15,6 +15,8 @@ request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 
 class JsonFormatter(logging.Formatter):
+    """Форматує записи системного журналу у вигляд рядків JSON (JSON Lines)."""
+
     def format(self, record: logging.LogRecord) -> str:
         entry = {
             "timestamp": datetime.fromtimestamp(record.created, timezone.utc).isoformat(timespec="milliseconds"),

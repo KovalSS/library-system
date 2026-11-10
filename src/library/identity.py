@@ -16,14 +16,17 @@ def email_taken(session: Session, email: str, except_id: str | None = None) -> b
 
 
 def duplicate_email() -> ApiError:
+    """Створює помилку конфлікту 409 при спробі використати зайнятий email."""
     return ApiError(409, "duplicate_email", "Цей email уже використовується.")
 
 
 def invalid_token() -> ApiError:
+    """Створює помилку 400 при використанні недійсного одноразового токена."""
     return ApiError(400, "invalid_token", "Посилання недійсне або прострочене.")
 
 
 def issue_email_token(session: Session, mailer, account: Account, kind: str) -> None:
+    """Генерує одноразовий токен, зберігає його в БД та надсилає лист користувачу."""
     token = new_token()
     session.add(EmailToken(token=token, account_id=account.id, kind=kind))
     session.commit()
@@ -31,6 +34,7 @@ def issue_email_token(session: Session, mailer, account: Account, kind: str) -> 
 
 
 def use_email_token(session: Session, token: str, kind: str) -> Account:
+    """Валідує та погашає одноразовий токен з листа, повертаючи відповідний акаунт."""
     found = session.get(EmailToken, token)
     if found is None or found.kind != kind or found.used:
         raise invalid_token()

@@ -40,6 +40,7 @@ def respond(request: Request, report: dict, columns: list[str], rows: list[dict]
 def top_editions(request: Request, bounds: tuple[date, date] = Depends(period),
                  limit: int = Query(default=10, ge=1, le=100),
                  session: Session = Depends(get_session), clock=Depends(get_clock), _=Depends(require(*STAFF_ROLES))):
+    """Формує звіт про найпопулярніші видання за вказаний період (REQ-F-039, REQ-F-042)."""
     start, end = bounds
     issued = session.scalars(select(Loan.edition_id).where(Loan.issued_on >= start, Loan.issued_on <= end))
     counts = Counter(issued)
@@ -75,6 +76,7 @@ def debtors(request: Request, session: Session = Depends(get_session), clock=Dep
 @router.get("/reports/library-load")
 def library_load(request: Request, bounds: tuple[date, date] = Depends(period),
                  session: Session = Depends(get_session), clock=Depends(get_clock), _=Depends(require(*STAFF_ROLES))):
+    """Формує звіт про завантаженість бібліотеки: кількість виданих і повернутих книг (REQ-F-041, REQ-F-042)."""
     start, end = bounds
     loans = session.scalars(select(Loan)).all()
     issued = sum(1 for loan in loans if start <= loan.issued_on <= end)
