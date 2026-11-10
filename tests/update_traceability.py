@@ -24,6 +24,24 @@ ADDED = {
     "REQ-F-051": ("A1", "LS-42", "LS-43", "LS-44", "LS-45, LS-37", "`createLoan`"),
     "REQ-F-052": ("A2", "LS-47", "LS-48", "LS-49", "LS-50, LS-37", "`listReaderRecommendations`"),
 }
+
+DOC_SECTIONS = {
+    "G1": "[api-reference.md](docs/api-reference.md#4-довідник-жанрів), [user-guide.md](docs/user-guide.md#3-сценарій-2-пошук-літератури-в-електронному-каталозі)",
+    "G2": "[api-reference.md](docs/api-reference.md#3-акаунти-персоналу-бібліотеки), [user-guide.md](docs/user-guide.md#8-сценарій-7-адміністрування-та-аналітичні-звіти)",
+    "G3": "[api-reference.md](docs/api-reference.md#2-управління-читачами-та-реєстрація), [user-guide.md](docs/user-guide.md#2-сценарій-1-реєстрація-активація-та-вхід-читача)",
+    "G4": "[api-reference.md](docs/api-reference.md#1-автентифікація-та-сесії), [user-guide.md](docs/user-guide.md#2-сценарій-1-реєстрація-активація-та-вхід-читача)",
+    "G5": "[api-reference.md](docs/api-reference.md#13-аудит-лог-дій-користувачів), [user-guide.md](docs/user-guide.md#8-сценарій-7-адміністрування-та-аналітичні-звіти)",
+    "G6": "[api-reference.md](docs/api-reference.md#7-обіг-фонду-видача-та-повернення), [user-guide.md](docs/user-guide.md#5-сценарій-4-видача-та-повернення-книги-робота-бібліотекаря)",
+    "G7": "[api-reference.md](docs/api-reference.md#8-онлайн-бронювання-та-черга), [user-guide.md](docs/user-guide.md#4-сценарій-3-бронювання-та-черга-очікування)",
+    "G8": "[api-reference.md](docs/api-reference.md#9-штрафи-та-облік-оплат), [user-guide.md](docs/user-guide.md#6-сценарій-5-штрафи-за-прострочення-та-їх-оплата)",
+    "G9": "[api-reference.md](docs/api-reference.md#5-каталог-видань-та-пошук), [user-guide.md](docs/user-guide.md#3-сценарій-2-пошук-літератури-в-електронному-каталозі)",
+    "G10": "[api-reference.md](docs/api-reference.md#12-аналітичні-звіти-бібліотеки), [user-guide.md](docs/user-guide.md#8-сценарій-7-адміністрування-та-аналітичні-звіти)",
+    "G11": "[api-reference.md](docs/api-reference.md#10-персональні-рекомендації), [user-guide.md](docs/user-guide.md#7-сценарій-6-кабінет-читача--сповіщення-та-рекомендації)",
+    "G12": "[api-reference.md](docs/api-reference.md#11-внутрішні-сповіщення-читача), [user-guide.md](docs/user-guide.md#7-сценарій-6-кабінет-читача--сповіщення-та-рекомендації)",
+    "G13": "[stack.md](docs/stack.md), [README.md](README.md), [coding-convention.md](docs/coding-convention.md)",
+    "A1": "[api-reference.md](docs/api-reference.md#7-обіг-фонду-видача-та-повернення), [user-guide.md](docs/user-guide.md#5-сценарій-4-видача-та-повернення-книги-робота-бібліотекаря)",
+    "A2": "[api-reference.md](docs/api-reference.md#10-персональні-рекомендації), [user-guide.md](docs/user-guide.md#7-сценарій-6-кабінет-читача--сповіщення-та-рекомендації)",
+}
 # Вимоги без власної операції API або з логікою поза маршрутом — місце реалізації вказано явно.
 EXTRA_IMPLEMENTATION = {
     "REQ-F-009": ["app.py"], "REQ-F-025": ["circulation.py"], "REQ-F-026": ["circulation.py"],
@@ -84,17 +102,19 @@ def main():
     out = []
     for row in rows:
         req = row[0].strip("*")
+        group = row[1].strip()
         impl = sorted({modules[o] for o in ops_of.get(req, []) if o in modules} | set(EXTRA_IMPLEMENTATION.get(req, [])))
         if req in NO_AUTOMATED_TEST and not impl:
             impl_cell = "— (не реалізується)" if req == "REQ-F-022" else "— (веб-інтерфейсу немає)"
         else:
             impl_cell = ", ".join(f"`{m}`" for m in impl) or "—"
         test_cell = ", ".join(f"`{t}`" for t in sorted(tests_of.get(req, []))) or NO_AUTOMATED_TEST.get(req, "—")
-        out.append("| " + " | ".join(row[:6] + [row[6], impl_cell, test_cell]) + " |")
+        doc_cell = DOC_SECTIONS.get(group, "—")
+        out.append("| " + " | ".join(row[:6] + [row[6], impl_cell, test_cell, doc_cell]) + " |")
 
     head = lines[:header_at]
-    text = "\n".join(head) + "\n| ID вимоги | Група | Test | Gate | Feature | Verification | API operation | Реалізація | Тести |\n"
-    text += "|---|---|---|---|---|---|---|---|---|\n" + "\n".join(out) + "\n" + "\n".join(tail).rstrip("\n") + "\n"
+    text = "\n".join(head) + "\n| ID вимоги | Група | Test | Gate | Feature | Verification | API operation | Реалізація | Тести | Документація |\n"
+    text += "|---|---|---|---|---|---|---|---|---|---|\n" + "\n".join(out) + "\n" + "\n".join(tail).rstrip("\n") + "\n"
     MATRIX.write_text(text, encoding="utf-8")
     print(f"Оновлено {MATRIX.relative_to(ROOT)}: {len(out)} вимог")
 
