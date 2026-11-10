@@ -1,5 +1,4 @@
 """Перевірка користувацької документації (`docs/user-guide.md`) проти фактичного API (Крок 10)."""
-import json
 import sys
 from pathlib import Path
 from fastapi.testclient import TestClient
@@ -8,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from library.app import create_app
-from library.infrastructure import ChiefAdmin, Clock
+from library.infrastructure import ChiefAdmin
 
 
 class SimpleClock:

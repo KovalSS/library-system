@@ -7,7 +7,6 @@
 4. Відсутність «тестів-сиріт» (тестів без прив'язки до вимог SRS).
 5. Відповідність операцій контракту OpenAPI затвердженим вимогам SRS.
 """
-import ast
 import re
 import sys
 from pathlib import Path
@@ -15,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 
-from verify_requirements import expand_ids, requirements_by_test
+from verify_requirements import requirements_by_test
 
 SRS_FILE = ROOT / "spec" / "srs.md"
 MATRIX_FILE = ROOT / "plan" / "traceability.md"
@@ -93,7 +92,7 @@ def main():
                 if not target_file.exists():
                     broken_links.append(f"{req_id}: файл документації '{doc_path}' не існує на диску!")
 
-    print(f"\n[3] Перевірка посилань на файли коду, тестів та документації:")
+    print("\n[3] Перевірка посилань на файли коду, тестів та документації:")
     if broken_links:
         print(f"ПОМИЛКА: Знайдено биті посилання ({len(broken_links)}):")
         for b in broken_links:
@@ -113,7 +112,7 @@ def main():
             else:
                 orphaned_tests.append(test_name)
 
-    print(f"\n[4] Перевірка тестів на наявність зв'язку з SRS:")
+    print("\n[4] Перевірка тестів на наявність зв'язку з SRS:")
     print(f"    Перевірено {len(tests_mapping)} функцій тестів застосунку.")
     print(f"    Контрактних мета-тестів (інфраструктура LS-02, LS-36): {len(contract_meta_tests)}.")
     if orphaned_tests:
