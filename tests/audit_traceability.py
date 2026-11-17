@@ -84,11 +84,11 @@ def main():
                 if not (TESTS_DIR / clean_test).exists():
                     broken_links.append(f"{req_id}: не знайдено тестовий файл '{clean_test}'")
 
-        # Перевірка файлів документації
+        # Перевірка файлів документації (відносно розташування матриці plan/)
         if row["documentation"] != "—":
             doc_refs = re.findall(r"\[([^\]]+)\]\(([^)#]+)", row["documentation"])
             for doc_name, doc_path in doc_refs:
-                target_file = ROOT / doc_path.strip()
+                target_file = (MATRIX_FILE.parent / doc_path.strip()).resolve()
                 if not target_file.exists():
                     broken_links.append(f"{req_id}: файл документації '{doc_path}' не існує на диску!")
 
